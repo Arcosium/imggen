@@ -1,17 +1,30 @@
 # 보안
 .env
 .env.*
+!.env.example
 *.pem
 *.key
+*.crt
 secrets.*
+.jwt_secret
+.fernet.key
+*_token.json
+*_secret.json
 Password
 password
 
+# 사용자 생성물 / 세션 (이미지·비디오 출력)
+history/
+outputs/
+server_ready.flag
+
 # 로그/임시
 *.log
+logs/
 nohup.out
 *.swp
 *.swo
+*.tmp
 
 # DB
 *.db
