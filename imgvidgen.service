@@ -1,0 +1,21 @@
+# systemd 유닛 — sudo cp 로 /etc/systemd/system/imgvidgen.service 설치 후 enable --now.
+# imgvidgen.ai-ve.uk (Cloudflare hyfe-iqc 터널) -> 127.0.0.1:8503 로 프록시됨.
+[Unit]
+Description=Image & Video Generator (imgvidgen.ai-ve.uk)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=opc
+Group=opc
+WorkingDirectory=/home/opc/projects/image_generator
+Environment=APP_PORT=8503
+# 서브도메인 루트(/)에서 서빙되므로 Gradio root_path 를 비워 /p/<port> 프리픽스를 끈다.
+Environment=GRADIO_ROOT_PATH=
+ExecStart=/usr/bin/python3 app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
