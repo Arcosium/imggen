@@ -4,6 +4,9 @@
 Description=Image & Video Generator (imgvidgen.ai-ve.uk)
 After=network-online.target
 Wants=network-online.target
+# 재시작 횟수 제한 해제: 빠른 크래시-루프(기본 10초 내 5회)에 systemd 가
+# 영구 포기하면 502 가 고착된다. 죽으면 무조건 다시 띄운다.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
