@@ -1,4 +1,18 @@
-# Image & Video Laboratory — Gemini · Imagen · Veo 통합 크리에이티브 스튜디오
+# Image & Video Laboratory — 로컬 ComfyUI 이미지 · Gemini/Veo 비디오 스튜디오
+
+## 로컬 이미지 생성
+
+이미지 탭은 ArcAI.ve와 동일한 고정 로컬 파이프라인(FLUX 생성 → Qwen Image Edit)을 사용합니다. 사용자 모델 선택과 이미지 API 키 입력은 없습니다. ComfyUI를 실행한 뒤 다음 환경변수를 설정하세요.
+
+```env
+COMFYUI_BASE_URL=http://127.0.0.1:8188
+COMFYUI_TXT2IMG_WORKFLOW=/absolute/path/to/flux_txt2img.json
+COMFYUI_EDIT_WORKFLOW=/absolute/path/to/qwen_image_edit.json
+# NSFW 토글은 이 서버 측 플래그가 있어야만 실제로 활성화됩니다.
+IMAGE_NSFW_ENABLED=0
+COMFYUI_NSFW_LORA=qwen-image-edit-plus-nsfw-lora.safetensors
+COMFYUI_NSFW_LORA_WEIGHT=0.9
+```
 
 > Google 의 Gemini Image / Imagen 4 / Veo 3.1 모델을 한 Gradio 인터페이스에서 채팅처럼 다루는 로컬 데스크톱 앱.
 

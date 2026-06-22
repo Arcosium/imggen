@@ -54,6 +54,7 @@ def _patch_gradio_client():
 _patch_gradio_client()
 
 import gradio as gr
+import local_image_pipeline
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -273,6 +274,44 @@ def _save_history_json(history, session_id):
 
 def process_image_interaction(api_key, model_display_name, prompt, upload_files, history, session_id,
                               aspect_ratio, resolution, thinking_level, num_images_img):
+    """Fixed ArcAI.ve-inspired ComfyUI path; legacy arguments are retained for Gradio compatibility."""
+    if not prompt:
+        yield history, session_id, "", None
+        return
+    if not session_id:
+        session_id = f"{_ts_session()}_local_image"
+    history = list(history or [])
+    if upload_files:
+        for f in upload_files:
+            history.append(((f,), None))
+    history.append((prompt, None))
+    history.append((None, "✨ 로컬 ComfyUI 이미지 생성 중..."))
+    yield history, session_id, "", None
+    try:
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        nsfw = bool(thinking_level)  # UI supplies the NSFW toggle in this retained slot.
+        source = next((f for f in (upload_files or []) if f.lower().rsplit('.', 1)[-1] in IMAGE_EXTS), None)
+        if source:
+            with open(source, "rb") as f:
+                image = local_image_pipeline.edit(f.read(), prompt, nsfw=nsfw)
+        else:
+            image = local_image_pipeline.generate(prompt, aspect_ratio, nsfw=nsfw)
+        path = os.path.join(OUTPUT_DIR, f"img_{_ts_file()}.png")
+        with open(path, "wb") as f:
+            f.write(image)
+        history.pop()
+        history.append((None, (path,)))
+        if nsfw and not local_image_pipeline.nsfw_enabled(True):
+            history.append((None, "NSFW 요청은 서버 IMAGE_NSFW_ENABLED=1 설정 전까지 SFW로 처리됩니다."))
+    except Exception as e:
+        history[-1] = (None, f"🚨 로컬 ComfyUI 오류: {str(e)}")
+    try:
+        _save_history_json(history, session_id)
+    except Exception:
+        pass
+    yield history, session_id, "", None
+    return
+
     if not session_id:
         session_id = f"NEW_{_ts_file()}"
 
@@ -416,8 +455,26 @@ def reset_session():
 
 
 def generate_modal_image(api_key, model_display_name, new_prompt, prev_prompt_str, modal_img_path,
-                         history, row_idx_str, resolution):
+                         history, row_idx_str, resolution, nsfw=False):
     yield gr.update(value="⏳ 처리 시작..."), gr.update(), gr.update()
+    try:
+        effective_prompt = new_prompt.strip() if new_prompt and new_prompt.strip() else prev_prompt_str
+        if not effective_prompt:
+            yield gr.update(value="프롬프트를 입력하세요."), gr.update(), gr.update()
+            return
+        if modal_img_path and os.path.exists(modal_img_path):
+            with open(modal_img_path, "rb") as f:
+                image = local_image_pipeline.edit(f.read(), effective_prompt, nsfw=bool(nsfw))
+        else:
+            image = local_image_pipeline.generate(effective_prompt, "1:1", nsfw=bool(nsfw))
+        path = os.path.join(OUTPUT_DIR, f"img_modal_{_ts_file()}.png")
+        with open(path, "wb") as f:
+            f.write(image)
+        yield gr.update(value="✅ 로컬 ComfyUI 재생성 완료"), gr.update(value=path), (effective_prompt, (path,))
+        return
+    except Exception as e:
+        yield gr.update(value=f"🚨 로컬 ComfyUI 오류: {str(e)}"), gr.update(), gr.update()
+        return
 
     if not api_key:
         yield gr.update(value="❌ API 키가 필요합니다."), gr.update(), gr.update()
@@ -743,7 +800,7 @@ def build_ui():
 
         with gr.Tabs():
             # --- TAB 1: 이미지 스튜디오 ---
-            with gr.Tab("🎨 이미지 스튜디오 (Gemini 3 Pro/Flash)"):
+            with gr.Tab("🎨 로컬 이미지 스튜디오 (ComfyUI)"):
                 session_id_state = gr.State("")
                 with gr.Row():
                     with gr.Column(scale=3, elem_id="chatbot-container"):
@@ -762,20 +819,12 @@ def build_ui():
                         )
 
                     with gr.Column(scale=1, elem_id="sidebar"):
-                        with gr.Row():
-                            api_key_img = gr.Textbox(label="🔑 API Key", type="password", value=load_api_key(), scale=3)
-                            gr.Button(
-                                "🔑 API 발급 & 사용량 조회",
-                                link="https://aistudio.google.com/usage?timeRange=last-28-days&project",
-                                size="sm",
-                            )
-                        model_selector_img = gr.Dropdown(
-                            choices=list(IMAGE_MODEL_MAPPING.keys()),
-                            value="Gemini 3.1 Flash Image (1K: ~$0.067/장)", label="모델",
-                        )
-                        aspect_ratio_img = gr.Dropdown(choices=ASPECT_RATIOS, value="1:1", label="비율")
-                        resolution_img = gr.Dropdown(choices=RESOLUTIONS, value="2K", label="해상도")
-                        thinking_level_img = gr.Radio(choices=THINK_LEVELS, value="Minimal", label="사고 수준")
+                        gr.Markdown("**고정 로컬 파이프라인**  \\n+FLUX 생성 → Qwen Image Edit. 모델 선택 및 API 키가 없습니다.")
+                        api_key_img = gr.State("")
+                        model_selector_img = gr.State("local-comfyui")
+                        aspect_ratio_img = gr.Dropdown(choices=list(local_image_pipeline.ASPECTS), value="1:1", label="비율")
+                        resolution_img = gr.State("local")
+                        thinking_level_img = gr.Checkbox(label="NSFW 편집 모드", value=False)
                         num_images_img = gr.Slider(minimum=1, maximum=10, step=1, value=1, label="연속 생성 횟수")
                         clear_btn = gr.Button("🗑️ 세션 초기화", variant="stop")
 
@@ -845,7 +894,7 @@ def build_ui():
                     fn=generate_modal_image,
                     inputs=[
                         api_key_img, model_selector_img, modal_prompt, modal_prev_prompt,
-                        modal_img_display, chatbot, modal_row_idx, resolution_img,
+                        modal_img_display, chatbot, modal_row_idx, resolution_img, thinking_level_img,
                     ],
                     outputs=[modal_status, modal_img_display, modal_pending_replacement], api_name=False,
                 )
@@ -871,11 +920,6 @@ def build_ui():
                         
                     return res_up, aspect_up, think_up
 
-                model_selector_img.change(
-                    fn=update_image_ui, 
-                    inputs=[model_selector_img], 
-                    outputs=[resolution_img, aspect_ratio_img, thinking_level_img]
-                )
 
             # --- TAB 2: 비디오 렌더링 ---
             with gr.Tab("🎬 비디오 렌더링 룸 (Veo 3.1)"):
