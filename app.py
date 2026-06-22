@@ -552,6 +552,8 @@ def handle_modal_close(history, row_idx_str, pending_replacement):
 
 
 # =============== [ VIDEO STUDIO (Veo) ] ===============
+# FUTURE: 비디오 생성은 추후 재구현할 때 사용할 보존 코드다. 현재 UI에서는 노출하지
+# 않으며 어떤 생성 이벤트도 실행되지 않는다. 이미지 파이프라인과 분리된 상태로 유지한다.
 VIDEO_MODEL_MAPPING = {
     "Veo 3.1 Standard (1080p: $0.40/초, 4k: $0.60/초)": "veo-3.1-generate-preview",
     "Veo 3.1 Fast (1080p: $0.12/초, 4k: $0.30/초)": "veo-3.1-fast-generate-preview",
@@ -921,8 +923,8 @@ def build_ui():
                     return res_up, aspect_up, think_up
 
 
-            # --- TAB 2: 비디오 렌더링 ---
-            with gr.Tab("🎬 비디오 렌더링 룸 (Veo 3.1)"):
+            # FUTURE: Veo 비디오 생성 UI는 재구현 전까지 숨긴다. 코드는 보존한다.
+            with gr.Tab("🎬 비디오 생성 (추후 구현 예정)", visible=False):
                 last_video_state = gr.State(None)
                 with gr.Row():
                     with gr.Column(scale=3, elem_id="video-container"):

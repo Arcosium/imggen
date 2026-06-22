@@ -1,4 +1,4 @@
-# Image & Video Laboratory — 로컬 ComfyUI 이미지 · Gemini/Veo 비디오 스튜디오
+# Image Laboratory — 로컬 ComfyUI 이미지 스튜디오
 
 ## 로컬 이미지 생성
 
@@ -14,9 +14,11 @@ COMFYUI_NSFW_LORA=qwen-image-edit-plus-nsfw-lora.safetensors
 COMFYUI_NSFW_LORA_WEIGHT=0.9
 ```
 
-> Google 의 Gemini Image / Imagen 4 / Veo 3.1 모델을 한 Gradio 인터페이스에서 채팅처럼 다루는 로컬 데스크톱 앱.
+비디오 생성(Veo) 코드는 향후 구현을 위해 보존하지만 현재 UI에서는 비활성화되어 있습니다.
 
-이미지 생성·편집·재생성 + 비디오 렌더링까지를 하나의 채팅 UI 에서 처리합니다.
+> 로컬 ComfyUI 이미지 생성·편집을 채팅형 Gradio 인터페이스에서 다루는 데스크톱 앱.
+
+이미지 생성·편집·재생성을 하나의 채팅 UI에서 처리합니다.
 프롬프트뿐 아니라 Word / Excel / PDF / TXT 문서를 드래그 앤 드롭하면 자동으로 텍스트를 추출해
 프롬프트의 컨텍스트로 사용하며, 모든 세션은 타임스탬프 폴더에 자동 저장돼 나중에 다시 불러올 수 있습니다.
 
