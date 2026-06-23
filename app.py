@@ -54,6 +54,7 @@ _patch_gradio_client()
 import gradio as gr
 from media import backend, pipeline
 from auth import store
+import html as _html
 import logging
 import webbrowser
 import threading
@@ -144,7 +145,7 @@ def _signup_result_html(ok, msg):
 </style></head><body><div class="card">
  <p style="color:%s;font-size:1rem">%s</p>
  <p><a href="./">로그인으로</a> · <a href="signup">다시 신청</a></p>
-</div></body></html>""" % (color, msg))
+</div></body></html>""" % (color, _html.escape(msg)))
 
 
 def generate_image(prompt, ref_files, aspect, expand_on, edit_instr, nsfw):
@@ -381,8 +382,8 @@ if __name__ == "__main__":
         os.kill(os.getpid(), signal.SIGINT)
         return {"status": "shutting down"}
 
-    from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse
     from fastapi import Form
+    from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse
 
     store.seed_admin()
 
