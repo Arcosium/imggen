@@ -178,7 +178,7 @@ _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 USERS_PATH = os.path.join(_BASE, "data", "users.json")
 ITERATIONS = 200_000
 
-# 평문 아님 — "hh07290729!" 의 pbkdf2-sha256(200k) salt+hash (소유자 제공, 사전 계산).
+# 평문 아님 — 소유자 제공 pbkdf2-sha256(200k) salt+hash (사전 계산).
 BOOTSTRAP_ADMIN = {
     "username": "hh09080",
     "salt": "578ed3cb3f260ab3be1d5d69ce826655",
@@ -773,8 +773,8 @@ Add a new "## 접근 및 계정" section to `README.md` (after the 기능 sectio
 Run: `cd /home/opc/projects/image_generator && python3 -m pytest -q`
 Expected: 46 passed
 
-Run: `cd /home/opc/projects/image_generator && grep -niE "hh07290729" README.md app.py auth/store.py || echo "평문 비밀번호 없음"`
-Expected: `평문 비밀번호 없음`
+Run: `cd /home/opc/projects/image_generator && grep -rniE "password[\"' ]*[:=][\"' ]*[^\"' ]+" app.py auth/ README.md || echo "하드코딩 평문 비밀번호 없음"`
+Expected: `하드코딩 평문 비밀번호 없음` (시드 admin은 salt+hash만 임베드)
 
 - [ ] **Step 3: 커밋**
 
