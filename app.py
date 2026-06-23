@@ -53,6 +53,7 @@ _patch_gradio_client()
 
 import gradio as gr
 from media import backend, pipeline
+import logging
 import webbrowser
 import threading
 
@@ -96,7 +97,6 @@ def generate_image(prompt, ref_files, aspect, expand_on, edit_instr, nsfw):
         yield "프롬프트를 입력해 주세요.", None
         return
 
-    # 참조 이미지가 있으면 편집 소스로 사용(첫 이미지 파일)
     source_path = None
     if ref_files:
         for f in ref_files:
@@ -104,34 +104,46 @@ def generate_image(prompt, ref_files, aspect, expand_on, edit_instr, nsfw):
                 source_path = f
                 break
 
-    yield "⏳ 시작하는 중...", None
     stages = {"label": "⏳ 시작하는 중..."}
 
     def _on_stage(s):
         stages["label"] = STAGE_LABELS.get(s, stages["label"])
 
-    try:
+    def _work():
         mode = backend.resolve_image_mode("uncensored" if nsfw else "sfw")
         if source_path:
-            # 참조 이미지 편집 경로: 업로드 이미지를 편집 지시로 수정
+            _on_stage("edit")
             with open(source_path, "rb") as f:
                 img_bytes = f.read()
-            _on_stage("edit")
-            yield stages["label"], None
             edited = pipeline.edit_image(img_bytes, edit_instr or prompt, mode=mode)
-            path = _save_bytes(edited, "png")
-        else:
-            res = pipeline.make_image(
-                idea=prompt, prompt=None, aspect=aspect, mode=mode,
-                edit_instructions=(edit_instr or None), expand=bool(expand_on),
-                on_stage=_on_stage,
-            )
-            path = _save_bytes(res["image"], "png")
-        yield "✅ 완료", path
-    except Exception as exc:  # noqa: BLE001
-        import logging
-        logging.getLogger("studio").warning("generate_image failed: %s", exc)
-        yield _friendly_error(exc), None
+            return _save_bytes(edited, "png")
+        res = pipeline.make_image(
+            idea=prompt, prompt=None, aspect=aspect, mode=mode,
+            edit_instructions=(edit_instr or None), expand=bool(expand_on),
+            on_stage=_on_stage,
+        )
+        return _save_bytes(res["image"], "png")
+
+    box = {}
+
+    def _runner():
+        try:
+            box["path"] = _work()
+        except Exception as exc:  # noqa: BLE001
+            box["err"] = exc
+
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    yield stages["label"], None
+    while t.is_alive():
+        t.join(timeout=0.5)
+        yield stages["label"], None
+
+    if "err" in box:
+        logging.getLogger("studio").warning("generate_image failed: %s", box["err"])
+        yield _friendly_error(box["err"]), None
+        return
+    yield "✅ 완료", box["path"]
 
 
 def generate_video(mode, prompt, input_image, aspect, expand_on, nsfw):
@@ -145,13 +157,12 @@ def generate_video(mode, prompt, input_image, aspect, expand_on, nsfw):
         yield "프롬프트를 입력해 주세요.", None
         return
 
-    yield "⏳ 시작하는 중...", None
     stages = {"label": "⏳ 시작하는 중..."}
 
     def _on_stage(s):
         stages["label"] = STAGE_LABELS.get(s, stages["label"])
 
-    try:
+    def _work():
         img_mode = backend.resolve_image_mode("uncensored" if nsfw else "sfw")
         input_bytes = None
         if is_i2v and input_image:
@@ -163,12 +174,28 @@ def generate_video(mode, prompt, input_image, aspect, expand_on, nsfw):
             on_stage=_on_stage,
         )
         ext = "mp4" if res["mime"] == "video/mp4" else "webm"
-        path = _save_bytes(res["video"], ext)
-        yield "✅ 완료", path
-    except Exception as exc:  # noqa: BLE001
-        import logging
-        logging.getLogger("studio").warning("generate_video failed: %s", exc)
-        yield _friendly_error(exc), None
+        return _save_bytes(res["video"], ext)
+
+    box = {}
+
+    def _runner():
+        try:
+            box["path"] = _work()
+        except Exception as exc:  # noqa: BLE001
+            box["err"] = exc
+
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    yield stages["label"], None
+    while t.is_alive():
+        t.join(timeout=0.5)
+        yield stages["label"], None
+
+    if "err" in box:
+        logging.getLogger("studio").warning("generate_video failed: %s", box["err"])
+        yield _friendly_error(box["err"]), None
+        return
+    yield "✅ 완료", box["path"]
 
 
 def build_ui():
