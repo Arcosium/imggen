@@ -1,0 +1,12 @@
+{
+  "30": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "%VIDEO_CKPT%"}},
+  "31": {"class_type": "CLIPLoader", "inputs": {"clip_name": "%T5%", "type": "wan"}},
+  "32": {"class_type": "VAELoader", "inputs": {"vae_name": "%VAE%"}},
+  "33": {"class_type": "LoadImage", "inputs": {"image": "%INPUT_IMAGE%"}},
+  "34": {"class_type": "CLIPTextEncode", "inputs": {"text": "%POSITIVE%", "clip": ["31", 0]}},
+  "35": {"class_type": "CLIPTextEncode", "inputs": {"text": "%NEGATIVE%", "clip": ["31", 0]}},
+  "36": {"class_type": "WanImageToVideo", "inputs": {"width": "%WIDTH%", "height": "%HEIGHT%", "length": "%FRAMES%", "batch_size": 1, "positive": ["34", 0], "negative": ["35", 0], "vae": ["32", 0], "start_image": ["33", 0]}},
+  "37": {"class_type": "KSampler", "inputs": {"seed": "%SEED%", "steps": "%STEPS%", "cfg": "%CFG%", "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0, "model": ["30", 0], "positive": ["34", 0], "negative": ["35", 0], "latent_image": ["36", 0]}},
+  "38": {"class_type": "VAEDecode", "inputs": {"samples": ["37", 0], "vae": ["32", 0]}},
+  "39": {"class_type": "VHS_VideoCombine", "inputs": {"images": ["38", 0], "frame_rate": "%FPS%", "format": "video/h264-mp4", "filename_prefix": "studio_vid"}}
+}
