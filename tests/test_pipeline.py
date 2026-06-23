@@ -41,7 +41,7 @@ def test_make_image_with_instructions_runs_edit(monkeypatch):
     calls = _stub_comfyui(monkeypatch)
     stages = []
     pipeline.make_image(idea="cat", edit_instructions="make it night", on_stage=stages.append)
-    assert "edit" in stages
+    assert stages == ["expand", "txt2img", "edit", "done"]
 
 
 def test_make_image_expand_off_uses_raw_prompt(monkeypatch):
@@ -57,7 +57,7 @@ def test_make_video_text_runs_full_pipeline(monkeypatch):
     assert res["video"] == b"VID"
     assert res["mime"] == "video/mp4"
     assert res["base_image"] == b"IMG"
-    assert "txt2img" in stages and "img2video" in stages
+    assert "expand" in stages and "txt2img" in stages and "img2video" in stages
 
 
 def test_make_video_image_to_video_skips_generation(monkeypatch):

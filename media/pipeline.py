@@ -77,6 +77,7 @@ def make_image(*, idea=None, prompt=None, aspect="1:1", mode="sfw",
         comfyui.free_memory(base_url)
         _stage("edit")
         img = edit_image(img, edit_instructions or "enhance and refine, keep composition", mode=mode)
+        comfyui.free_memory(base_url)
     _stage("done")
     return {"image": img, "prompt_used": used}
 
@@ -90,6 +91,7 @@ def make_video(*, idea=None, prompt=None, aspect="9:16", mode="sfw",
 
     # 이미지→영상: 사용자 이미지를 바로 애니메이트(생성 단계 생략)
     if input_image is not None:
+        # i2v: 프롬프트 확장 없이 입력 프롬프트를 그대로 사용(없으면 빈 문자열)
         used = prompt or (idea or "")
         _stage("img2video")
         video, mime = img2video(input_image, used, aspect=aspect)
