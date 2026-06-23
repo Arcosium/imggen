@@ -1,5 +1,3 @@
-import importlib
-
 import pytest
 
 from auth import store
@@ -96,3 +94,7 @@ def test_check_login_lock_expires(tmp_store, monkeypatch):
     assert tmp_store.check_login("gina", "rightpw") is False  # 잠김
     clock["t"] += 901  # 잠금 시간 경과
     assert tmp_store.check_login("gina", "rightpw") is True
+
+
+def test_verify_credentials_missing_user(tmp_store):
+    assert tmp_store.verify_credentials("ghost", "whatever") is False

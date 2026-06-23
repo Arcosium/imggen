@@ -15,8 +15,9 @@ import time
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 USERS_PATH = os.path.join(_BASE, "data", "users.json")
 ITERATIONS = 200_000
+_DUMMY_SALT = "00000000000000000000000000000000"  # 타이밍 평탄화용 고정 salt(사용자 열거 방지)
 
-# 평문 아님 — "hh07290729!" 의 pbkdf2-sha256(200k) salt+hash (소유자 제공, 사전 계산).
+# 평문 아님 — 소유자 제공 pbkdf2-sha256(200k) salt+hash (사전 계산).
 BOOTSTRAP_ADMIN = {
     "username": "hh09080",
     "salt": "578ed3cb3f260ab3be1d5d69ce826655",
@@ -75,6 +76,7 @@ def seed_admin():
 def verify_credentials(username, password):
     u = _load().get(username or "")
     if not u or u.get("status") != "approved":
+        _hash(password, _DUMMY_SALT)  # 존재 여부와 무관하게 동일한 pbkdf2 비용 지불
         return False
     return hmac.compare_digest(u.get("hash", ""), _hash(password, u.get("salt", "")))
 
