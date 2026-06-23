@@ -201,7 +201,7 @@ def generate_video(mode, prompt, input_image, aspect, expand_on, nsfw):
 CSS = """
 body.dark { font-family: 'Pretendard', sans-serif; background-color: #121212 !important; color: #fff !important; }
 #result-img, #result-vid { border-radius: 12px; background:#1e1e1e !important; border:1px solid #333; }
-#sidebar { background:#181818 !important; padding:18px; border-radius:12px; border:1px solid #333; }
+#sidebar-img, #sidebar-vid { background:#181818 !important; padding:18px; border-radius:12px; border:1px solid #333; }
 """
 
 JS_CODE = """
@@ -227,11 +227,11 @@ def build_ui():
             # ---- 이미지 스튜디오 ----
             with gr.Tab("🎨 이미지 스튜디오"):
                 with gr.Row():
-                    with gr.Column(scale=2, elem_id="sidebar"):
+                    with gr.Column(scale=2, elem_id="sidebar-img"):
                         img_prompt = gr.Textbox(label="프롬프트", lines=4,
                                                 placeholder="만들고 싶은 이미지를 자유롭게 적어 주세요.")
                         img_aspect = gr.Dropdown(choices=aspects, value="1:1", label="비율")
-                        img_ref = gr.File(file_count="multiple",
+                        img_ref = gr.File(file_count="multiple", file_types=["image"],
                                           label="참조 이미지(편집할 원본, 선택)")
                         with gr.Accordion("고급 설정", open=False):
                             img_expand = gr.Checkbox(label="프롬프트 자동 다듬기", value=True)
@@ -259,7 +259,7 @@ def build_ui():
             # ---- 비디오 스튜디오 ----
             with gr.Tab("🎬 비디오 스튜디오"):
                 with gr.Row():
-                    with gr.Column(scale=2, elem_id="sidebar"):
+                    with gr.Column(scale=2, elem_id="sidebar-vid"):
                         vid_mode = gr.Radio(choices=["텍스트→영상", "이미지→영상"],
                                             value="텍스트→영상", label="모드")
                         vid_prompt = gr.Textbox(label="프롬프트", lines=4,
