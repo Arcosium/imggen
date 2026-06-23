@@ -198,9 +198,97 @@ def generate_video(mode, prompt, input_image, aspect, expand_on, nsfw):
     yield "✅ 완료", box["path"]
 
 
+CSS = """
+body.dark { font-family: 'Pretendard', sans-serif; background-color: #121212 !important; color: #fff !important; }
+#result-img, #result-vid { border-radius: 12px; background:#1e1e1e !important; border:1px solid #333; }
+#sidebar { background:#181818 !important; padding:18px; border-radius:12px; border:1px solid #333; }
+"""
+
+JS_CODE = """
+function() {
+    document.body.classList.add("dark");
+    document.querySelector("gradio-app").classList.add("dark");
+    window.addEventListener("beforeunload", function () { navigator.sendBeacon('/shutdown'); });
+}
+"""
+
+
 def build_ui():
-    with gr.Blocks() as demo:
-        gr.Markdown("UI 구성 예정")
+    aspects = list(backend.ASPECTS.keys())
+    with gr.Blocks(theme=gr.themes.Base(), css=CSS, js=JS_CODE) as demo:
+        with gr.Row():
+            with gr.Column(scale=8):
+                gr.Markdown("# 🚀 Image & Video Studio")
+                gr.Markdown("Made by Hyunho Kim · ")
+            with gr.Column(scale=1, min_width=140):
+                gr.Button("📖 사용설명서", link="manual", variant="secondary", size="sm")
+
+        with gr.Tabs():
+            # ---- 이미지 스튜디오 ----
+            with gr.Tab("🎨 이미지 스튜디오"):
+                with gr.Row():
+                    with gr.Column(scale=2, elem_id="sidebar"):
+                        img_prompt = gr.Textbox(label="프롬프트", lines=4,
+                                                placeholder="만들고 싶은 이미지를 자유롭게 적어 주세요.")
+                        img_aspect = gr.Dropdown(choices=aspects, value="1:1", label="비율")
+                        img_ref = gr.File(file_count="multiple",
+                                          label="참조 이미지(편집할 원본, 선택)")
+                        with gr.Accordion("고급 설정", open=False):
+                            img_expand = gr.Checkbox(label="프롬프트 자동 다듬기", value=True)
+                            img_edit_instr = gr.Textbox(label="편집 지시(참조 이미지 수정 내용)",
+                                                        lines=2, placeholder="예: 배경을 밤으로 바꿔줘")
+                            img_nsfw = gr.Checkbox(label="제한 해제 편집 모드", value=False)
+                        with gr.Row():
+                            img_go = gr.Button("✨ 생성", variant="primary")
+                            img_stop = gr.Button("⏹️ 중지", variant="stop")
+                    with gr.Column(scale=3):
+                        img_status = gr.Textbox(label="진행 상태", interactive=False)
+                        img_out = gr.Image(label="결과", elem_id="result-img", height=520,
+                                           type="filepath", interactive=False)
+                        img_dl = gr.DownloadButton("⬇️ 다운로드", variant="secondary")
+
+                img_evt = img_go.click(
+                    fn=generate_image,
+                    inputs=[img_prompt, img_ref, img_aspect, img_expand, img_edit_instr, img_nsfw],
+                    outputs=[img_status, img_out], api_name=False,
+                )
+                img_stop.click(fn=None, inputs=None, outputs=None, cancels=[img_evt], api_name=False)
+                img_out.change(fn=lambda p: gr.update(value=p), inputs=[img_out],
+                               outputs=[img_dl], api_name=False)
+
+            # ---- 비디오 스튜디오 ----
+            with gr.Tab("🎬 비디오 스튜디오"):
+                with gr.Row():
+                    with gr.Column(scale=2, elem_id="sidebar"):
+                        vid_mode = gr.Radio(choices=["텍스트→영상", "이미지→영상"],
+                                            value="텍스트→영상", label="모드")
+                        vid_prompt = gr.Textbox(label="프롬프트", lines=4,
+                                                placeholder="영상으로 만들 장면을 적어 주세요.")
+                        vid_input = gr.Image(label="입력 이미지(이미지→영상 모드)", type="filepath",
+                                             visible=False)
+                        vid_aspect = gr.Dropdown(choices=["9:16", "16:9", "1:1"], value="9:16",
+                                                 label="비율")
+                        with gr.Accordion("고급 설정", open=False):
+                            vid_expand = gr.Checkbox(label="프롬프트 자동 다듬기", value=True)
+                            vid_nsfw = gr.Checkbox(label="제한 해제 편집 모드", value=False)
+                        with gr.Row():
+                            vid_go = gr.Button("🎬 생성", variant="primary")
+                            vid_stop = gr.Button("⏹️ 중지", variant="stop")
+                    with gr.Column(scale=3):
+                        vid_status = gr.Textbox(label="진행 상태", interactive=False)
+                        vid_out = gr.Video(label="결과", elem_id="result-vid", height=520)
+
+                vid_mode.change(
+                    fn=lambda m: gr.update(visible=("이미지" in m)),
+                    inputs=[vid_mode], outputs=[vid_input], api_name=False,
+                )
+                vid_evt = vid_go.click(
+                    fn=generate_video,
+                    inputs=[vid_mode, vid_prompt, vid_input, vid_aspect, vid_expand, vid_nsfw],
+                    outputs=[vid_status, vid_out], api_name=False,
+                )
+                vid_stop.click(fn=None, inputs=None, outputs=None, cancels=[vid_evt], api_name=False)
+
     return demo
 
 
