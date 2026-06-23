@@ -78,6 +78,34 @@ def _save_bytes(data, ext):
     return path
 
 
+MANUAL_DOCX = os.path.join(BASE_DIR, "사용설명서.docx")
+_manual_cache = {"html": None}
+
+
+def render_manual_html():
+    """사용설명서 .docx 를 HTML 본문 조각으로 변환(탭 내 gr.HTML 용). 캐시."""
+    if _manual_cache["html"] is not None:
+        return _manual_cache["html"]
+    if not os.path.exists(MANUAL_DOCX):
+        html = "<p>사용설명서 파일을 찾을 수 없습니다.</p>"
+    else:
+        try:
+            import mammoth
+            with open(MANUAL_DOCX, "rb") as f:
+                html = mammoth.convert_to_html(f).value
+        except Exception:
+            try:
+                from docx import Document
+                doc = Document(MANUAL_DOCX)
+                html = "".join(
+                    "<p>%s</p>" % (p.text or "").replace("<", "&lt;").replace(">", "&gt;")
+                    for p in doc.paragraphs)
+            except Exception as e2:
+                html = "<pre>사용설명서 변환 실패: %s</pre>" % e2
+    _manual_cache["html"] = "<div style='max-width:880px;line-height:1.7'>%s</div>" % html
+    return _manual_cache["html"]
+
+
 # =============== [ 진행 단계 라벨 — 모델명 비노출 ] ===============
 STAGE_LABELS = {
     "expand": "🧠 아이디어 다듬는 중...",
@@ -106,6 +134,32 @@ def authenticate(username, password):
 def signup_submit(username, password):
     """가입 신청 처리(테스트 가능 순수 로직). (ok, msg) 반환."""
     return store.create_pending(username, password)
+
+
+def _admin_view(actor):
+    """(allowed, pending, msg) — actor가 관리자일 때만 대기 목록 노출."""
+    if not store.is_admin(actor):
+        return False, [], "관리자만 사용할 수 있습니다."
+    pending = store.list_pending()
+    return True, pending, ("대기 중 %d명" % len(pending)) if pending else "대기 중인 신청이 없습니다."
+
+
+def admin_approve_action(username, actor):
+    if not store.is_admin(actor):
+        return False, "관리자만 사용할 수 있습니다."
+    if not username:
+        return False, "승인할 아이디를 선택하세요."
+    store.approve(username)
+    return True, "승인 완료: %s" % username
+
+
+def admin_reject_action(username, actor):
+    if not store.is_admin(actor):
+        return False, "관리자만 사용할 수 있습니다."
+    if not username:
+        return False, "거절할 아이디를 선택하세요."
+    store.reject(username)
+    return True, "거절 완료: %s" % username
 
 
 def _signup_page_html():
@@ -278,7 +332,7 @@ def build_ui():
                 gr.Markdown("# 🚀 Image & Video Studio")
                 gr.Markdown("Made by Hyunho Kim · ")
             with gr.Column(scale=1, min_width=140):
-                gr.Button("📖 사용설명서", link="manual", variant="secondary", size="sm")
+                gr.Markdown("")
 
         with gr.Tabs():
             # ---- 이미지 스튜디오 ----
@@ -346,6 +400,45 @@ def build_ui():
                 )
                 vid_stop.click(fn=None, inputs=None, outputs=None, cancels=[vid_evt], api_name=False)
 
+            # ---- 관리자 승인 ----
+            with gr.Tab("🔐 관리자"):
+                gr.Markdown("관리자만 사용할 수 있습니다. 가입 신청을 승인/거절합니다.")
+                adm_status = gr.Textbox(label="상태", interactive=False)
+                adm_pending = gr.Dropdown(choices=[], label="대기 중 신청", interactive=True)
+                with gr.Row():
+                    adm_refresh = gr.Button("🔄 새로고침")
+                    adm_approve = gr.Button("✅ 승인", variant="primary")
+                    adm_reject = gr.Button("⛔ 거절", variant="stop")
+
+                def _adm_refresh(request: gr.Request):
+                    actor = getattr(request, "username", None)
+                    allowed, pending, msg = _admin_view(actor)
+                    return gr.update(choices=pending, value=(pending[0] if pending else None)), msg
+
+                def _adm_approve(selected, request: gr.Request):
+                    actor = getattr(request, "username", None)
+                    _, msg = admin_approve_action(selected, actor)
+                    allowed, pending, _ = _admin_view(actor)
+                    return gr.update(choices=pending, value=(pending[0] if pending else None)), msg
+
+                def _adm_reject(selected, request: gr.Request):
+                    actor = getattr(request, "username", None)
+                    _, msg = admin_reject_action(selected, actor)
+                    allowed, pending, _ = _admin_view(actor)
+                    return gr.update(choices=pending, value=(pending[0] if pending else None)), msg
+
+                adm_refresh.click(fn=_adm_refresh, inputs=None,
+                                  outputs=[adm_pending, adm_status], api_name=False)
+                adm_approve.click(fn=_adm_approve, inputs=[adm_pending],
+                                  outputs=[adm_pending, adm_status], api_name=False)
+                adm_reject.click(fn=_adm_reject, inputs=[adm_pending],
+                                 outputs=[adm_pending, adm_status], api_name=False)
+
+            # ---- 사용설명서 ----
+            with gr.Tab("📖 사용설명서"):
+                gr.HTML(render_manual_html())
+                gr.DownloadButton("⬇️ 원본(.docx) 다운로드", value=MANUAL_DOCX, variant="secondary")
+
     return demo
 
 
@@ -383,7 +476,7 @@ if __name__ == "__main__":
         return {"status": "shutting down"}
 
     from fastapi import Form
-    from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse
+    from fastapi.responses import HTMLResponse
 
     store.seed_admin()
 
@@ -395,67 +488,6 @@ if __name__ == "__main__":
     def signup_post(username: str = Form(""), password: str = Form("")):
         ok, msg = signup_submit(username, password)
         return HTMLResponse(_signup_result_html(ok, msg))
-
-    MANUAL_DOCX = os.path.join(BASE_DIR, "사용설명서.docx")
-    _manual_cache = {"html": None}
-
-    def _render_manual_html() -> str:
-        if _manual_cache["html"] is not None:
-            return _manual_cache["html"]
-        if not os.path.exists(MANUAL_DOCX):
-            return "<h2>사용설명서 파일을 찾을 수 없습니다.</h2>"
-        try:
-            import mammoth
-            with open(MANUAL_DOCX, "rb") as f:
-                body = mammoth.convert_to_html(f).value
-        except Exception as e:
-            try:
-                from docx import Document
-                doc = Document(MANUAL_DOCX)
-                paras = "".join(f"<p>{(p.text or '').replace('<','&lt;').replace('>','&gt;')}</p>" for p in doc.paragraphs)
-                body = paras or f"<p>변환 오류: {e}</p>"
-            except Exception as e2:
-                body = f"<pre>사용설명서 변환 실패: {e2}</pre>"
-
-        page = f"""<!DOCTYPE html>
-<html lang=\"ko\"><head><meta charset=\"utf-8\">
-<title>📖 Image &amp; Video Laboratory 사용설명서</title>
-<style>
-  body {{ background:#1a1a1a; color:#eee; font-family:'Pretendard','Apple SD Gothic Neo','맑은 고딕',sans-serif;
-         max-width:880px; margin:0 auto; padding:32px 24px 80px; line-height:1.7; }}
-  h1, h2, h3 {{ color:#ffd966; border-bottom:1px solid #444; padding-bottom:6px; margin-top:1.6em; }}
-  h1 {{ font-size:1.8rem; }} h2 {{ font-size:1.4rem; }} h3 {{ font-size:1.15rem; }}
-  p, li {{ font-size:15px; }}
-  code, pre {{ background:#2a2a2a; color:#fae; padding:2px 6px; border-radius:4px; }}
-  pre {{ padding:12px; overflow-x:auto; }}
-  a {{ color:#7ec8ff; }}
-  table {{ border-collapse:collapse; margin:10px 0; }}
-  td, th {{ border:1px solid #555; padding:6px 10px; }}
-  img {{ max-width:100%; height:auto; }}
-  .download-btn {{ position:fixed; top:14px; right:18px; background:#ffd966; color:#000;
-                  padding:8px 14px; border-radius:8px; font-weight:600; text-decoration:none;
-                  box-shadow:0 2px 8px rgba(0,0,0,.4); }}
-  .download-btn:hover {{ background:#ffe7a0; }}
-</style></head><body>
-<a class=\"download-btn\" href=\"manual/download\">⬇️ 원본(.docx) 다운로드</a>
-{body}
-</body></html>"""
-        _manual_cache["html"] = page
-        return page
-
-    @app_api.get("/manual", response_class=HTMLResponse)
-    def manual_page():
-        return HTMLResponse(_render_manual_html())
-
-    @app_api.get("/manual/download")
-    def manual_download():
-        if not os.path.exists(MANUAL_DOCX):
-            return PlainTextResponse("사용설명서 파일이 없습니다.", status_code=404)
-        return FileResponse(
-            MANUAL_DOCX,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            filename="사용설명서.docx",
-        )
 
     launched_by_parent = bool(
         os.environ.get("LAUNCHED_BY_SCRIPT")
