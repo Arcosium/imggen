@@ -53,6 +53,7 @@ _patch_gradio_client()
 
 import gradio as gr
 from media import backend, pipeline
+from auth import store
 import logging
 import webbrowser
 import threading
@@ -89,6 +90,61 @@ STAGE_LABELS = {
 def _friendly_error(exc):
     """내부 예외를 사용자용 일반 메시지로. 백엔드/소켓 세부정보 비노출."""
     return "🚨 생성에 실패했습니다. 미디어 백엔드 연결을 확인해 주세요."
+
+
+# =============== [ 인증: 로그인 / 가입 ] ===============
+AUTH_MESSAGE = ('승인된 계정만 입장할 수 있습니다. 계정이 없다면 '
+                '<a href="signup" style="color:#7ec8ff">가입 신청</a> 후 관리자 승인을 기다려 주세요.')
+
+
+def authenticate(username, password):
+    """Gradio 로그인 콜백 — 승인된 계정만 통과, 5회 실패 시 잠금."""
+    return store.check_login(username, password)
+
+
+def signup_submit(username, password):
+    """가입 신청 처리(테스트 가능 순수 로직). (ok, msg) 반환."""
+    return store.create_pending(username, password)
+
+
+def _signup_page_html():
+    return """<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>가입 신청</title>
+<style>
+ body{background:#121212;color:#eee;font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;
+      display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;}
+ .card{background:#1e1e1e;border:1px solid #333;border-radius:14px;padding:32px;width:320px;}
+ h1{font-size:1.3rem;margin:0 0 6px;} p{color:#aaa;font-size:.9rem;margin:0 0 18px;}
+ label{display:block;font-size:.85rem;margin:12px 0 4px;}
+ input{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #444;
+       background:#2a2a2a;color:#fff;}
+ button{margin-top:18px;width:100%;padding:11px;border:0;border-radius:8px;background:#ffd966;
+        color:#000;font-weight:700;cursor:pointer;}
+ a{color:#7ec8ff;}
+</style></head><body>
+<form class="card" method="post" action="signup">
+ <h1>가입 신청</h1>
+ <p>관리자 승인 후 로그인할 수 있습니다.</p>
+ <label>아이디</label><input name="username" autocomplete="username" required>
+ <label>비밀번호</label><input name="password" type="password" autocomplete="new-password" required>
+ <button type="submit">가입 신청</button>
+ <p style="margin-top:16px"><a href="./">← 로그인으로</a></p>
+</form></body></html>"""
+
+
+def _signup_result_html(ok, msg):
+    color = "#8fe388" if ok else "#ff8f8f"
+    return ("""<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<title>가입 신청</title><style>
+ body{background:#121212;color:#eee;font-family:'Pretendard',sans-serif;display:flex;min-height:100vh;
+      align-items:center;justify-content:center;margin:0;}
+ .card{background:#1e1e1e;border:1px solid #333;border-radius:14px;padding:32px;width:320px;text-align:center;}
+ a{color:#7ec8ff;}
+</style></head><body><div class="card">
+ <p style="color:%s;font-size:1rem">%s</p>
+ <p><a href="./">로그인으로</a> · <a href="signup">다시 신청</a></p>
+</div></body></html>""" % (color, msg))
 
 
 def generate_image(prompt, ref_files, aspect, expand_on, edit_instr, nsfw):
@@ -326,6 +382,18 @@ if __name__ == "__main__":
         return {"status": "shutting down"}
 
     from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse
+    from fastapi import Form
+
+    store.seed_admin()
+
+    @app_api.get("/signup", response_class=HTMLResponse)
+    def signup_page():
+        return HTMLResponse(_signup_page_html())
+
+    @app_api.post("/signup", response_class=HTMLResponse)
+    def signup_post(username: str = Form(""), password: str = Form("")):
+        ok, msg = signup_submit(username, password)
+        return HTMLResponse(_signup_result_html(ok, msg))
 
     MANUAL_DOCX = os.path.join(BASE_DIR, "사용설명서.docx")
     _manual_cache = {"html": None}
@@ -417,5 +485,6 @@ if __name__ == "__main__":
         root_path = f"/p/{PORT}"
 
     print(f"[Image Generator] Starting on port {PORT} (root_path={root_path or '/'})", flush=True)
-    app_api = gr.mount_gradio_app(app_api, demo, path="/", root_path=root_path)
+    app_api = gr.mount_gradio_app(app_api, demo, path="/", root_path=root_path,
+                                  auth=authenticate, auth_message=AUTH_MESSAGE)
     uvicorn.run(app_api, host="0.0.0.0", port=PORT)

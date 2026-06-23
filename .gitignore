@@ -1,6 +1,8 @@
 # 보안
 .env
 .env.*
+# 사용자 계정 저장소(비밀번호 해시)
+data/
 !.env.example
 *.pem
 *.key
