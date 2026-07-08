@@ -1,12 +1,17 @@
 {
   "30": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": "%VIDEO_CKPT%"}},
-  "31": {"class_type": "CLIPLoader", "inputs": {"clip_name": "%T5%", "type": "wan"}},
-  "32": {"class_type": "VAELoader", "inputs": {"vae_name": "%VAE%"}},
+  "31": {"class_type": "LTXAVTextEncoderLoader", "inputs": {"text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors", "ckpt_name": "ltx-2-3-22b-text_encoder.safetensors", "device": "default"}},
+  "32": {"class_type": "VAELoader", "inputs": {"vae_name": "ltx-2-3-22b-VAE.safetensors"}},
   "33": {"class_type": "LoadImage", "inputs": {"image": "%INPUT_IMAGE%"}},
   "34": {"class_type": "CLIPTextEncode", "inputs": {"text": "%POSITIVE%", "clip": ["31", 0]}},
   "35": {"class_type": "CLIPTextEncode", "inputs": {"text": "%NEGATIVE%", "clip": ["31", 0]}},
-  "36": {"class_type": "WanImageToVideo", "inputs": {"width": "%WIDTH%", "height": "%HEIGHT%", "length": "%FRAMES%", "batch_size": 1, "positive": ["34", 0], "negative": ["35", 0], "vae": ["32", 0], "start_image": ["33", 0]}},
-  "37": {"class_type": "KSampler", "inputs": {"seed": "%SEED%", "steps": "%STEPS%", "cfg": "%CFG%", "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0, "model": ["30", 0], "positive": ["34", 0], "negative": ["35", 0], "latent_image": ["36", 0]}},
+  "40": {"class_type": "LTXVConditioning", "inputs": {"positive": ["34", 0], "negative": ["35", 0], "frame_rate": "%FPS%"}},
+  "36": {"class_type": "LTXVImgToVideo", "inputs": {"positive": ["40", 0], "negative": ["40", 1], "vae": ["32", 0], "image": ["33", 0], "width": "%WIDTH%", "height": "%HEIGHT%", "length": "%FRAMES%", "batch_size": 1, "strength": 1.0}},
+  "41": {"class_type": "RandomNoise", "inputs": {"noise_seed": "%SEED%"}},
+  "42": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+  "43": {"class_type": "LTXVScheduler", "inputs": {"steps": "%STEPS%", "max_shift": 2.05, "base_shift": 0.95, "stretch": true, "terminal": 0.1, "latent": ["36", 2]}},
+  "44": {"class_type": "CFGGuider", "inputs": {"model": ["30", 0], "positive": ["36", 0], "negative": ["36", 1], "cfg": "%CFG%"}},
+  "37": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["41", 0], "guider": ["44", 0], "sampler": ["42", 0], "sigmas": ["43", 0], "latent_image": ["36", 2]}},
   "38": {"class_type": "VAEDecode", "inputs": {"samples": ["37", 0], "vae": ["32", 0]}},
-  "39": {"class_type": "VHS_VideoCombine", "inputs": {"images": ["38", 0], "frame_rate": "%FPS%", "format": "video/h264-mp4", "filename_prefix": "studio_vid"}}
+  "39": {"class_type": "VHS_VideoCombine", "inputs": {"images": ["38", 0], "frame_rate": "%FPS%", "loop_count": 0, "format": "video/h264-mp4", "pingpong": false, "save_output": true, "filename_prefix": "studio_vid"}}
 }

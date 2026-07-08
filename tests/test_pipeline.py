@@ -65,6 +65,7 @@ def test_make_video_image_to_video_skips_generation(monkeypatch):
     stages = []
     res = pipeline.make_video(prompt="move", input_image=b"USERIMG", on_stage=stages.append)
     assert res["video"] == b"VID"
-    assert res["base_image"] is None        # i2v 직행 — 생성 안 함
+    # i2v 직행 — txt2img 생성은 건너뛰고, 입력 이미지를 미리보기용 base_image 로 그대로 노출.
+    assert res["base_image"] == b"USERIMG"
     assert "txt2img" not in stages
     assert "img2video" in stages

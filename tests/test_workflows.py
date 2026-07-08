@@ -20,7 +20,7 @@ def test_i2v_template_has_video_combine_node():
     tpl = comfyui.load_template(cfg["i2v_workflow"])
     classes = {n["class_type"] for n in tpl.values()}
     assert "VHS_VideoCombine" in classes
-    assert "WanImageToVideo" in classes
+    assert "LTXVImgToVideo" in classes   # 영상 백엔드는 WAN → LTX-Video 로 이관됨
 
 
 def test_edit_template_has_lora_weight_token():

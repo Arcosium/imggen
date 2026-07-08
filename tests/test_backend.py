@@ -39,8 +39,35 @@ def test_image_config_defaults_point_to_packaged_workflows():
 def test_video_config_defaults():
     cfg = backend.video_config()
     assert cfg["i2v_workflow"].endswith("workflows/i2v.json")
-    assert cfg["frames"] == 49
-    assert cfg["fps"] == 16
+    assert cfg["frames"] == 97
+    assert cfg["fps"] == 24
+
+
+def test_sfw_violation_flags_explicit_terms():
+    assert backend.sfw_violation("a nude woman on the beach")
+    assert backend.sfw_violation("explicit porn scene")
+    assert backend.sfw_violation("누드 화보")
+    assert backend.sfw_violation("야한 그림 그려줘")
+    # 영어는 대소문자 무관
+    assert backend.sfw_violation("NAKED body")
+
+
+def test_sfw_violation_allows_clean_prompts():
+    assert backend.sfw_violation("a cat sitting on a sofa") is None
+    assert backend.sfw_violation("노을 지는 해변 풍경") is None
+    assert backend.sfw_violation("") is None
+    assert backend.sfw_violation(None) is None
+
+
+def test_sfw_violation_no_substring_false_positives():
+    # 단어경계 매칭 — 흔한 단어 속 부분문자열은 통과해야 한다.
+    assert backend.sfw_violation("data analysis dashboard") is None   # 'anal'
+    assert backend.sfw_violation("the county of Sussex, England") is None  # 'sex'
+    assert backend.sfw_violation("a document about cucumbers") is None     # 'cum'
+
+
+def test_sfw_negative_is_nonempty_string():
+    assert isinstance(backend.SFW_NEGATIVE, str) and "nude" in backend.SFW_NEGATIVE
 
 
 def test_llm_config_enabled_flag_follows_base_url(monkeypatch):

@@ -15,7 +15,10 @@ _EXPAND_SYSTEM = (
 )
 
 
-def _chat(messages, *, temperature=0.7, max_tokens=400):
+# 로컬 LLM이 추론(reasoning) 모델이라 추론이 max_tokens 예산을 먼저 소진한다.
+# 작으면(예 400) content가 빈 문자열로 끝나(finish_reason=length) expand_prompt 가
+# 항상 원문으로 폴백한다. 모델 context 262144 라 큰 값도 안전하므로 넉넉히 준다.
+def _chat(messages, *, temperature=0.7, max_tokens=24000):
     cfg = backend.llm_config()
     payload = {"model": cfg["model"], "messages": messages,
                "temperature": temperature, "max_tokens": max_tokens}
