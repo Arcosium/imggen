@@ -4,8 +4,8 @@ from media import backend
 
 
 def test_aspect_dims_known():
-    assert backend.aspect_dims("9:16") == (576, 1024)
-    assert backend.aspect_dims("16:9") == (1024, 576)
+    assert backend.aspect_dims("9:16") == (720, 1280)
+    assert backend.aspect_dims("16:9") == (1280, 720)
     assert backend.aspect_dims("1:1") == (1024, 1024)
 
 
@@ -36,11 +36,18 @@ def test_image_config_defaults_point_to_packaged_workflows():
     assert cfg["nsfw_lora_weight"] == 0.9
 
 
-def test_video_config_defaults():
-    cfg = backend.video_config()
-    assert cfg["i2v_workflow"].endswith("workflows/i2v.json")
-    assert cfg["frames"] == 97
-    assert cfg["fps"] == 24
+def test_image_config_defaults_are_krea2_models():
+    """생성=Krea2-Turbo(단일 Qwen3-VL 인코더), 편집=Qwen-Image-Edit. 둘이 같은 VAE 를 쓴다."""
+    cfg = backend.image_config()
+    assert cfg["ckpt"] == "krea2_turbo-Q8_0.gguf"
+    assert cfg["te"] == "qwen3vl_4b_fp8_scaled.safetensors"
+    assert cfg["vae"] == "qwen_image_vae.safetensors"
+    assert "t5" not in cfg and "clip_l" not in cfg   # FLUX 2중 인코더 잔재 금지
+
+
+def test_backend_exposes_no_video_config():
+    """영상 기능 전면 제거(2026-07-09) — 재도입 방지 회귀 테스트."""
+    assert not hasattr(backend, "video_config")
 
 
 def test_sfw_violation_flags_explicit_terms():
@@ -66,8 +73,11 @@ def test_sfw_violation_no_substring_false_positives():
     assert backend.sfw_violation("a document about cucumbers") is None     # 'cum'
 
 
-def test_sfw_negative_is_nonempty_string():
-    assert isinstance(backend.SFW_NEGATIVE, str) and "nude" in backend.SFW_NEGATIVE
+def test_no_diffusion_negative_after_krea2_migration():
+    """Krea2-Turbo 이관(2026-07-12)으로 SFW 방어선은 '입력 차단어 게이트' 한 겹이 됐다 —
+    cfg=1.0 에선 샘플러가 uncond 를 건너뛰어 디퓨전 네거티브가 원리적으로 무시되기 때문.
+    죽은 네거티브가 되살아나면 '막고 있다'는 착각만 준다(사장님 결정)."""
+    assert not hasattr(backend, "SFW_NEGATIVE")
 
 
 def test_llm_config_enabled_flag_follows_base_url(monkeypatch):

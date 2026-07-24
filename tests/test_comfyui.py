@@ -29,15 +29,6 @@ def test_first_image_ref_extracts_first():
     assert comfyui.first_image_ref(outputs) == {"filename": "a.png", "subfolder": "", "type": "output"}
 
 
-def test_first_media_ref_prefers_videos_over_images():
-    outputs = {
-        "39": {"gifs": [{"filename": "clip.mp4", "subfolder": "", "type": "output"}]},
-        "16": {"images": [{"filename": "frame.png"}]},
-    }
-    ref = comfyui.first_media_ref(outputs)
-    assert ref["filename"] == "clip.mp4"
-
-
 def test_first_image_ref_raises_when_empty():
     import pytest
     with pytest.raises(RuntimeError):

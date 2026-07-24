@@ -9,10 +9,10 @@ import re
 
 ASPECTS = {
     "1:1": (1024, 1024),
-    "9:16": (576, 1024),
-    "16:9": (1024, 576),
-    "3:4": (768, 1024),
-    "4:3": (1024, 768),
+    "9:16": (720, 1280),
+    "16:9": (1280, 720),
+    "3:4": (960, 1280),
+    "4:3": (1280, 960),
 }
 
 
@@ -41,13 +41,13 @@ def resolve_image_mode(requested):
 
 
 # =============== [ SFW 방어선 ] ===============
-# base txt2img(비검열 T5)·i2v(10Eros) 모델은 프롬프트 지시를 그대로 이행하므로,
-# 공개 스튜디오를 "무조건 SFW" 로 만들려면 (1) 입력 차단어 게이트 + (2) 디퓨전 네거티브
-# 두 겹으로 막는다. 완벽한 차단은 아니고(경량 백스톱), 명백한 성적/노출 요청을 걸러낸다.
-
-# txt2img/i2v 에 항상 주입하는 SFW 네거티브(값이 없을 때의 기본값).
-SFW_NEGATIVE = ("nsfw, nude, nudity, naked, topless, bottomless, explicit, sexual, "
-                "porn, nipple, areola, genitalia, cleavage, lingerie, underwear, suggestive")
+# 공개 스튜디오의 SFW 차단은 입력 차단어 게이트 한 겹이다(경량 백스톱 — 완벽한 차단은
+# 아니고 명백한 성적/노출 요청을 걸러낸다).
+#
+# 과거엔 여기에 '디퓨전 네거티브'(SFW_NEGATIVE) 한 겹이 더 있었으나 txt2img 모델을
+# Krea2-Turbo 로 옮기며 제거했다 — 증류 turbo 라 cfg=1.0 에서 돌아가고, cfg=1.0 이면
+# 샘플러가 uncond 를 아예 건너뛰므로 네거티브 프롬프트는 원리적으로 무시된다.
+# 되살리려면 cfg>1 이 필요한데 그건 turbo 스펙 밖이라 화질이 붕괴한다.
 
 # 명백한 성인/노출 표현만 — 영어는 단어경계 매칭('analysis'의 anal, 'Sussex'의 sex 오탐 방지),
 # 한국어는 부분일치. 오탐 큰 모호어(자지/보지/성기/사정/정액/삽입/변태 등)는 의도적으로 제외.
@@ -102,36 +102,18 @@ def image_config():
         "base_url": _base_url(),
         "txt2img_workflow": os.environ.get("COMFYUI_TXT2IMG_WORKFLOW") or _pkg_workflow("txt2img.json"),
         "edit_workflow": os.environ.get("COMFYUI_EDIT_WORKFLOW") or _pkg_workflow("edit.json"),
-        "ckpt": os.environ.get("COMFYUI_CKPT") or "FHDR_ComfyUI-Q8_0.gguf",
+        "ckpt": os.environ.get("COMFYUI_CKPT") or "krea2_turbo-Q8_0.gguf",
         "edit_ckpt": os.environ.get("COMFYUI_EDIT_CKPT") or "qwen-image-edit-2511-Q4_K_M.gguf",
-        "t5": os.environ.get("COMFYUI_T5") or "Kaoru8-t5xxl-unchained-Q4_0.gguf",
-        "clip_l": os.environ.get("COMFYUI_CLIP_L") or "clip_l.safetensors",
-        "vae": os.environ.get("COMFYUI_VAE") or "ae.safetensors",
+        # Krea2 텍스트 인코더 = Qwen3-VL-4B 단일(CLIPLoader type="krea2"). FLUX 시절의
+        # T5+clip_l 2중 인코더(DualCLIPLoaderGGUF)는 이 아키텍처에 없다.
+        "te": os.environ.get("COMFYUI_TE") or "qwen3vl_4b_fp8_scaled.safetensors",
+        # 생성·편집이 같은 VAE(qwen_image)를 쓴다 — FLUX 의 ae.safetensors 는 더 이상 안 쓴다.
+        "vae": os.environ.get("COMFYUI_VAE") or "qwen_image_vae.safetensors",
         "nsfw_lora": os.environ.get("COMFYUI_NSFW_LORA") or "qwen-image-edit-plus-nsfw-lora.safetensors",
         "nsfw_lora_weight": float(os.environ.get("COMFYUI_NSFW_LORA_WEIGHT") or "0.9"),
         # 레퍼런스+대상 2-이미지 편집(Qwen-Image-Edit-Plus: image1=대상·image2=레퍼런스).
         "edit_ref_workflow": os.environ.get("COMFYUI_EDIT_REF_WORKFLOW") or _pkg_workflow("edit_ref.json"),
         "edit_ref_ckpt": os.environ.get("COMFYUI_EDIT_REF_CKPT") or "qwen-image-edit-2511-Q4_K_M.gguf",
-    }
-
-
-def video_config():
-    # 영상 = LTX-2.3(10Eros, UnetLoaderGGUF) + gemma 텍스트 인코더 + LTX VAE.
-    # 인코더/projection/VAE 파일명은 i2v.json 에 하드코딩(edit_ref.json 과 동일 패턴)되어
-    # 여기 t5/vae 값은 워크플로에서 쓰이지 않는다(참고용). LTXVImgToVideo 의 length(=출력 프레임수,
-    # %FRAMES%로 주입)는 (8n+1) 이어야 한다. 24fps 기준 길이: 49≈2s·73≈3s·97≈4s·121≈5s.
-    # 길이↑=생성시간↑(프레임당 ~10-17s on GB10). 기본 97(≈4s). COMFYUI_VIDEO_FRAMES 로 조정.
-    # LTX 는 cfg≈3, fps 24 가 자연스럽다.
-    return {
-        "base_url": _base_url(),
-        "i2v_workflow": os.environ.get("COMFYUI_I2V_WORKFLOW") or _pkg_workflow("i2v.json"),
-        "video_ckpt": os.environ.get("COMFYUI_VIDEO_MODEL") or "10Eros_v1-Q4_K_M.gguf",
-        "t5": os.environ.get("COMFYUI_T5") or "gemma_3_12B_it_fp4_mixed.safetensors",
-        "vae": os.environ.get("COMFYUI_VAE") or "ltx-2-3-22b-VAE.safetensors",
-        "frames": int(os.environ.get("COMFYUI_VIDEO_FRAMES") or "97"),
-        "fps": int(os.environ.get("COMFYUI_VIDEO_FPS") or "24"),
-        "steps": int(os.environ.get("COMFYUI_VIDEO_STEPS") or "20"),
-        "cfg": float(os.environ.get("COMFYUI_VIDEO_CFG") or "3.0"),
     }
 
 

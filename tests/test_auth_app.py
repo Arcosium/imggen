@@ -31,7 +31,7 @@ def test_signup_submit_creates_pending(tmp_store):
 def test_signup_page_html_has_form_no_model_names():
     html = app._signup_page_html()
     assert "<form" in html and 'action="signup"' in html.replace("'", '"')
-    for w in ["FLUX", "Qwen", "Veo", "Gemini", "Imagen", "ComfyUI", "Wan"]:
+    for w in ["FLUX", "Krea", "Qwen", "Veo", "Gemini", "Imagen", "ComfyUI", "Wan"]:
         assert w not in html
 
 

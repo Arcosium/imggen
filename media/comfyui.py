@@ -71,15 +71,6 @@ def first_image_ref(outputs):
     raise RuntimeError("ComfyUI 출력 이미지 없음")
 
 
-def first_media_ref(outputs, keys=("gifs", "videos", "images")):
-    for key in keys:
-        for node in (outputs or {}).values():
-            for m in (node.get(key) or []):
-                return {"filename": m["filename"], "subfolder": m.get("subfolder", ""),
-                        "type": m.get("type", "output")}
-    raise RuntimeError("ComfyUI 출력 미디어 없음")
-
-
 def free_memory(base_url, *, unload_models=True, free=True, timeout=30):
     """모델/메모리 해제(POST /free). 단계 사이 언로드로 피크 1모델 보장. 베스트에포트."""
     try:

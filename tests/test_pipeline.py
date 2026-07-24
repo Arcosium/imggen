@@ -1,7 +1,7 @@
 from media import pipeline
 
 
-def _stub_comfyui(monkeypatch, *, image=b"IMG", video=b"VID"):
+def _stub_comfyui(monkeypatch, *, image=b"IMG"):
     """comfyui/llm을 전부 목킹 — 네트워크 없이 단계 순서/분기만 검증."""
     calls = {"queued": [], "freed": 0}
     monkeypatch.setattr(pipeline.comfyui, "load_template", lambda p: {"t": p})
@@ -14,11 +14,7 @@ def _stub_comfyui(monkeypatch, *, image=b"IMG", video=b"VID"):
     monkeypatch.setattr(pipeline.comfyui, "queue_prompt", _queue)
     monkeypatch.setattr(pipeline.comfyui, "poll_history", lambda url, pid, **k: {"out": {}})
     monkeypatch.setattr(pipeline.comfyui, "first_image_ref", lambda o: {"filename": "a.png"})
-    monkeypatch.setattr(pipeline.comfyui, "first_media_ref", lambda o: {"filename": "clip.mp4"})
-
-    def _fetch(url, ref):
-        return video if ref["filename"].endswith(".mp4") else image
-    monkeypatch.setattr(pipeline.comfyui, "fetch_media", _fetch)
+    monkeypatch.setattr(pipeline.comfyui, "fetch_media", lambda url, ref: image)
 
     def _free(url, **k):
         calls["freed"] += 1
@@ -50,22 +46,7 @@ def test_make_image_expand_off_uses_raw_prompt(monkeypatch):
     assert res["prompt_used"] == "raw prompt"
 
 
-def test_make_video_text_runs_full_pipeline(monkeypatch):
-    _stub_comfyui(monkeypatch)
-    stages = []
-    res = pipeline.make_video(idea="dog", on_stage=stages.append)
-    assert res["video"] == b"VID"
-    assert res["mime"] == "video/mp4"
-    assert res["base_image"] == b"IMG"
-    assert "expand" in stages and "txt2img" in stages and "img2video" in stages
-
-
-def test_make_video_image_to_video_skips_generation(monkeypatch):
-    _stub_comfyui(monkeypatch)
-    stages = []
-    res = pipeline.make_video(prompt="move", input_image=b"USERIMG", on_stage=stages.append)
-    assert res["video"] == b"VID"
-    # i2v 직행 — txt2img 생성은 건너뛰고, 입력 이미지를 미리보기용 base_image 로 그대로 노출.
-    assert res["base_image"] == b"USERIMG"
-    assert "txt2img" not in stages
-    assert "img2video" in stages
+def test_pipeline_exposes_no_video_api():
+    """영상 기능 전면 제거(2026-07-09) — 재도입 방지 회귀 테스트."""
+    for gone in ("img2video", "make_video", "_video_first_frame"):
+        assert not hasattr(pipeline, gone), gone

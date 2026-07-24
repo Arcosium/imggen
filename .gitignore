@@ -69,3 +69,5 @@ quant_dataset*.json
 .vscode/
 .DS_Store
 Thumbs.db
+/data
+사용설명서.docx

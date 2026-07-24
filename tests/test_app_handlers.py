@@ -69,26 +69,71 @@ def test_edit_images_blocks_nsfw_instruction(monkeypatch, tmp_path):
     assert "🚫" in final_status or "부적절" in final_status
 
 
-def test_generate_video_image_mode_requires_input(monkeypatch, tmp_path):
+def test_app_exposes_no_video_handlers():
+    """영상 기능 전면 제거(2026-07-09) — 재도입 방지 회귀 테스트."""
+    for gone in ("generate_video", "concat_videos"):
+        assert not hasattr(app, gone), gone
+
+
+def test_generate_and_edit_cannot_run_at_the_same_time(monkeypatch, tmp_path):
+    """생성/편집은 서로 다른 체크포인트를 VRAM 에 올린다 — 동시에 돌면 OOM.
+    한쪽이 GPU 락을 쥐고 있으면 다른 쪽은 즉시 거절돼야 한다(대기 아님)."""
     monkeypatch.setattr(app, "OUTPUT_DIR", str(tmp_path))
-    # (vmode, prompt, input_image, input_video, aspect, edit_instr, motion_only, expand_on)
-    outs = list(app.generate_video("이미지→영상", "move it", None, None, "9:16", "", False, True))
-    final_status, final_path = outs[-1]
-    assert final_path is None
-    assert "이미지" in final_status
+    target = tmp_path / "t.png"
+    target.write_bytes(b"PNG")
+
+    assert app._GPU_LOCK.acquire(blocking=False)   # 다른 작업이 점유 중인 상황 재현
+    try:
+        g_status, g_out = list(app.generate_images("a cat", 1, "1:1", True))[-1]
+        e_status, e_out = list(app.edit_images(str(target), None, "분위기 이식", "더 선명하게"))[-1]
+    finally:
+        app._GPU_LOCK.release()
+    assert g_out is None and e_out is None
+    assert g_status == app.BUSY_MSG and e_status == app.BUSY_MSG
 
 
-def test_generate_video_blocks_nsfw_prompt(monkeypatch, tmp_path):
+def test_gpu_lock_is_released_after_generate_completes(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "OUTPUT_DIR", str(tmp_path))
-    called = {"n": 0}
+    monkeypatch.setattr(app.pipeline, "make_image",
+                        lambda **k: {"image": b"PNGDATA", "prompt_used": "x"})
+    list(app.generate_images("a cat", 1, "1:1", True))
+    assert app._GPU_LOCK.acquire(blocking=False), "정상 종료 후 GPU 락이 안 풀렸다"
+    app._GPU_LOCK.release()
 
-    def _should_not_run(**k):
-        called["n"] += 1
-        return {"video": b"X", "mime": "video/mp4"}
 
-    monkeypatch.setattr(app.pipeline, "make_video", _should_not_run)
-    outs = list(app.generate_video("텍스트→영상", "explicit porn clip", None, None, "9:16", "", False, True))
-    final_status, final_path = outs[-1]
-    assert final_path is None
-    assert called["n"] == 0
-    assert "🚫" in final_status or "부적절" in final_status
+def test_gpu_lock_is_released_after_generate_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(app, "OUTPUT_DIR", str(tmp_path))
+
+    def _boom(**k):
+        raise OSError("Connection refused")
+
+    monkeypatch.setattr(app.pipeline, "make_image", _boom)
+    list(app.generate_images("a cat", 1, "1:1", True))
+    assert app._GPU_LOCK.acquire(blocking=False), "실패 후 GPU 락이 안 풀렸다"
+    app._GPU_LOCK.release()
+
+
+def test_gpu_lock_is_held_until_worker_finishes_when_generator_is_cancelled(monkeypatch, tmp_path):
+    """⏹️ 중지는 제너레이터만 닫는다 — 백엔드 작업은 계속 돈다.
+    워커가 살아있는 동안 락을 풀면 다음 작업이 겹쳐 붙어 OOM 이다."""
+    import threading as _th
+    import time as _time
+    monkeypatch.setattr(app, "OUTPUT_DIR", str(tmp_path))
+    release = _th.Event()
+
+    def _slow(**k):
+        release.wait(5)
+        return {"image": b"PNGDATA", "prompt_used": "x"}
+
+    monkeypatch.setattr(app.pipeline, "make_image", _slow)
+    gen = app.generate_images("a cat", 1, "1:1", True)
+    next(gen)                                    # 워커 시작
+    gen.close()                                  # ⏹️ 중지 == GeneratorExit
+    assert not app._GPU_LOCK.acquire(blocking=False), "워커가 도는 중인데 락이 풀렸다"
+    release.set()
+    for _ in range(100):                         # 워커 종료 후에는 풀려야 한다
+        if app._GPU_LOCK.acquire(blocking=False):
+            app._GPU_LOCK.release()
+            return
+        _time.sleep(0.05)
+    raise AssertionError("워커 종료 후에도 GPU 락이 안 풀렸다")
