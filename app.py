@@ -126,9 +126,15 @@ SFW_REFUSAL = "부적절(성적·노출) 요청은 생성할 수 없습니다. �
 
 # =============== [ GPU 단일 점유 — 생성/편집 동시 실행 금지 ] ===============
 # 생성(txt2img)과 편집(edit)은 서로 다른 체크포인트를 VRAM 에 올린다. 동시에 돌면 OOM 이
-# 나서 두 작업이 다 죽는다. 그래서 프로세스 전역 락 하나로 **한 번에 하나만** 돌린다.
+# 나서 두 작업이 다 죽는다. 그래서 락 하나로 **한 번에 하나만** 돌린다.
 # 대기시키지 않고 즉시 거절한다(기다리게 하면 Gradio 진행표시가 멈춘 것처럼 보인다).
-_GPU_LOCK = threading.Lock()
+#
+# 2026-07-28: 프로세스 전역(threading.Lock) → 프로세스 **간**(arcgpu flock) 으로 넓혔다.
+# 다른 앱(ArcAI.ve 이미지 스튜디오)이 같은 백엔드·같은 VRAM 을 쓰는데 락을 공유하지 않아
+# 서로 끼어들었다 — NVRM OOM 210건/7일. 같은 락 파일을 여는 프로세스는 모두 직렬화된다.
+from arcgpu import GpuLock
+
+_GPU_LOCK = GpuLock()
 BUSY_MSG = "지금 다른 작업(생성 또는 편집)이 진행 중입니다. 끝난 뒤 다시 시도해 주세요."
 
 
@@ -689,4 +695,5 @@ if __name__ == "__main__":
     app_api = gr.mount_gradio_app(app_api, demo, path="/", root_path=root_path,
                                   auth=authenticate, auth_message=AUTH_MESSAGE,
                                   theme=THEME, css=CSS, js=JS_CODE)
-    uvicorn.run(app_api, host="0.0.0.0", port=PORT)
+    # cloudflared 가 localhost 로 프록시한다 — LAN 에 직접 열어둘 이유가 없다.
+    uvicorn.run(app_api, host="127.0.0.1", port=PORT)
