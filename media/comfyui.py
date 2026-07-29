@@ -4,7 +4,10 @@
 원래 형(int 등)을 보존하고, 문자열 내 임베드 토큰은 문자열 치환한다.
 """
 import json
+import os
+import subprocess
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -46,8 +49,43 @@ def _get_json(url, timeout=30):
         return json.loads(r.read())
 
 
+def ensure_up(base_url, timeout=120):
+    """ComfyUI 가 내려가 있으면 올리고 준비될 때까지 기다린다.
+
+    유휴 3분이면 comfyui-idle.timer 가 서비스를 내린다(ComfyUI 에 유휴 언로드 API 가 없어
+    모델 12~13GB 가 호스트 RAM 에 주차되는 것을 프로세스 종료로 막는 구조). imggen 은
+    ArcAI.ve 와 같은 ComfyUI 를 쓰는 별개 클라이언트라 여기도 기동 보장이 필요하다.
+    유저 유닛이라 sudo 불필요. 떠 있으면 /queue 한 번 값만 든다."""
+    # imggen.service 는 User=arcosium 시스템 유닛이라 XDG_RUNTIME_DIR 이 환경에 없다.
+    # 그대로 두면 `systemctl --user` 가 유저 버스를 못 찾아 조용히 실패한다 — 명시 주입.
+    env = {**os.environ,
+           "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR") or "/run/user/%d" % os.getuid()}
+    subprocess.run(["systemctl", "--user", "start", "comfyui.service"],
+                   check=False, capture_output=True, timeout=60, env=env)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(base_url.rstrip("/") + "/queue", timeout=3).close()
+            return True
+        except Exception:
+            time.sleep(1)
+    return False
+
+
+def _retry_after_start(base_url, call):
+    """호출이 연결 실패로 죽으면 ComfyUI 를 올리고 1회 재시도.
+    선프로브를 두지 않아 떠 있는 정상 경로(연속 생성 중)엔 비용이 0이다."""
+    try:
+        return call()
+    except urllib.error.URLError:
+        if not ensure_up(base_url):
+            raise
+        return call()
+
+
 def queue_prompt(base_url, graph, client_id="studio"):
-    out = _post_json(base_url.rstrip("/") + "/prompt", {"prompt": graph, "client_id": client_id})
+    out = _retry_after_start(base_url, lambda: _post_json(
+        base_url.rstrip("/") + "/prompt", {"prompt": graph, "client_id": client_id}))
     return out["prompt_id"]
 
 
@@ -100,7 +138,11 @@ def upload_image(base_url, image_bytes, filename="studio_input.png"):
     )
     req = urllib.request.Request(base_url.rstrip("/") + "/upload/image", data=body,
                                  headers={"Content-Type": "multipart/form-data; boundary=%s" % boundary})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        j = json.loads(r.read())
+
+    def _send():                 # 편집 경로는 업로드가 큐잉보다 먼저 — 여기도 기동 보장
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read())
+
+    j = _retry_after_start(base_url, _send)
     return {"name": j.get("name", filename), "subfolder": j.get("subfolder", ""),
             "type": j.get("type", "input")}
