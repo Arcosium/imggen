@@ -21,7 +21,10 @@ _EXPAND_SYSTEM = (
 def _chat(messages, *, temperature=0.7, max_tokens=24000):
     cfg = backend.llm_config()
     payload = {"model": cfg["model"], "messages": messages,
-               "temperature": temperature, "max_tokens": max_tokens}
+               "temperature": temperature, "max_tokens": max_tokens,
+               # 프롬프트 확장에 사고는 필요 없다 — 끄면 수 초, 켜면 수십 초 걸린다.
+               # 모르는 백엔드는 이 키를 무시하므로 max_tokens 예산은 그대로 넉넉히 둔다.
+               "chat_template_kwargs": {"enable_thinking": False}}
     req = urllib.request.Request(
         cfg["base_url"] + "/chat/completions",
         data=json.dumps(payload).encode(),

@@ -118,15 +118,24 @@ def image_config():
 
 
 def llm_config():
-    """프롬프트 확장용 OpenAI-호환 LLM 설정. base_url 미설정이면 enabled=False(확장 폴백)."""
+    """프롬프트 확장용 OpenAI-호환 LLM 설정. base_url 미설정이면 enabled=False(확장 폴백).
+
+    기본값 = 공용 로컬 LLM(llamaserver.service :11434). 예전엔 env 가 없으면 그냥 꺼져서,
+    systemd 로 뜬 프로덕션(env 없음·dotenv 없음)에선 확장이 조용히 안 돌았다.
+    끄려면 IMAGE_PROMPT_LLM_BASE_URL=off.
+    """
     base = (os.environ.get("IMAGE_PROMPT_LLM_BASE_URL")
-            or os.environ.get("LOCAL_LLM_BASE_URL") or "").rstrip("/")
+            or os.environ.get("LOCAL_LLM_BASE_URL")
+            or "http://127.0.0.1:11434/v1").rstrip("/")
+    if base.lower() in ("off", "0", "none", "false"):
+        base = ""
     return {
         "enabled": bool(base),
         "base_url": base,
         "api_key": os.environ.get("IMAGE_PROMPT_LLM_API_KEY") or os.environ.get("LOCAL_LLM_API_KEY") or "local",
-        "model": os.environ.get("IMAGE_PROMPT_LLM_MODEL") or os.environ.get("LOCAL_LLM_MODEL") or "local-model",
-        # 로컬 LLM이 추론(reasoning) 모델이라 넉넉한 max_tokens 로 호출하면 응답이
-        # 오래 걸린다(수십 초~수분). 30s 면 timeout 으로 expand_prompt 가 원문 폴백한다.
-        "timeout": int(os.environ.get("IMAGE_PROMPT_LLM_TIMEOUT") or "600"),
+        "model": (os.environ.get("IMAGE_PROMPT_LLM_MODEL") or os.environ.get("LOCAL_LLM_MODEL")
+                  or "qwen3.6-35b-a3b-uncensored"),
+        # 추론 OFF 로 부르므로(media/llm.py) 확장은 수 초면 끝난다. 그래도 안 오면
+        # expand_prompt 가 원문으로 폴백한다 — 생성 자체는 안 막힌다.
+        "timeout": int(os.environ.get("IMAGE_PROMPT_LLM_TIMEOUT") or "120"),
     }
