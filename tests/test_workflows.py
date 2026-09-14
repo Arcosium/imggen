@@ -33,3 +33,22 @@ def test_edit_template_has_lora_weight_token():
     raw = json.dumps(comfyui.load_template(cfg["edit_workflow"]))
     assert "%LORA_WEIGHT%" in raw
     assert "%INPUT_IMAGE%" in raw
+
+
+def test_edit_templates_chain_lightning_lora():
+    """2026-09-14: 편집 그래프에 Lightning 4스텝 LoRA — Unet → Lightning → NSFW LoRA → KSampler."""
+    cfg = backend.image_config()
+    for key in ("edit_workflow", "edit_ref_workflow"):
+        g = comfyui.load_template(cfg[key])
+        assert g["40"]["inputs"]["lora_name"].startswith("Qwen-Image-Edit-2511-Lightning-4steps"), key
+        assert g["40"]["inputs"]["model"] == ["20", 0] and g["21"]["inputs"]["model"] == ["40", 0], key
+        assert g["25"]["inputs"]["model"] == ["21", 0], key
+
+
+def test_edit_image_defaults_follow_lightning_and_full_denoise():
+    """4스텝·CFG 1·denoise 1.0 — denoise 0.7 이면 편집 지시가 안 먹어 원본이 그대로 나온다(2026-09-14 실측)."""
+    import inspect
+    from media import pipeline
+    d = {k: v.default for k, v in inspect.signature(pipeline.edit_image).parameters.items()}
+    assert (d["steps"], d["cfg"], d["denoise"]) == (4, 1.0, 1.0)
+

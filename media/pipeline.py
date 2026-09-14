@@ -27,7 +27,10 @@ def txt2img(prompt, *, aspect="1:1", seed=0, steps=8, cfg=1.0):
     return _run_image(graph, ic["base_url"])
 
 
-def edit_image(image_bytes, instructions, *, mode="sfw", seed=0, steps=20, cfg=4.0, denoise=0.7):
+# Qwen-Image-Edit-2511 + lightx2v Lightning 4스텝 LoRA(2026-09-14) — 증류 LoRA 스펙은 4스텝·CFG 1(구 20스텝·CFG 4).
+# denoise 는 1.0 이어야 한다: Qwen-Image-Edit 는 구조 보존을 conditioning(image1)이 맡고, 0.7 이면 입력 latent 를
+# 거의 재구성해 지시가 안 먹는다(ArcAI.ve 2026-06 수정과 같은 원인). 4스텝에선 0.7 이면 원본이 그대로 나왔다(9/14 실측).
+def edit_image(image_bytes, instructions, *, mode="sfw", seed=0, steps=4, cfg=1.0, denoise=1.0):
     ic = backend.image_config()
     weight = ic["nsfw_lora_weight"] if mode == "uncensored" else 0.0
     name = comfyui.upload_image(ic["base_url"], image_bytes)["name"]
@@ -40,7 +43,7 @@ def edit_image(image_bytes, instructions, *, mode="sfw", seed=0, steps=20, cfg=4
 
 
 def edit_image_ref(target_bytes, reference_bytes, instructions, *, mode="sfw",
-                   composite=False, seed=0, steps=10, cfg=4.0, denoise=1.0):
+                   composite=False, seed=0, steps=4, cfg=1.0, denoise=1.0):
     """레퍼런스+대상 2-이미지 편집(Qwen-Image-Edit-Plus: image1=대상, image2=레퍼런스).
     composite=False(분위기 이식): 레퍼런스의 조명·색감·무드를 대상에 입힘(피사체/구도 보존).
     composite=True(장면 합성): 대상의 피사체/제품을 레퍼런스 장면 안에 합성.

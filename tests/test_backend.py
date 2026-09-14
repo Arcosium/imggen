@@ -32,7 +32,7 @@ def test_image_config_defaults_point_to_packaged_workflows():
     cfg = backend.image_config()
     assert cfg["base_url"] == "http://127.0.0.1:8188"
     assert cfg["txt2img_workflow"].endswith("workflows/txt2img.json")
-    assert cfg["edit_workflow"].endswith("workflows/edit.json")
+    assert cfg["edit_workflow"].endswith("workflows/edit_lightning.json")   # 2026-09-14 Lightning 4스텝
     assert cfg["nsfw_lora_weight"] == 0.9
 
 

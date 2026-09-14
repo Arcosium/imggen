@@ -1,0 +1,148 @@
+{
+  "20": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "%EDIT_CKPT%"
+    }
+  },
+  "40": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "lora_name": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 1.0,
+      "model": [
+        "20",
+        0
+      ]
+    }
+  },
+  "21": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "lora_name": "%LORA_NAME%",
+      "strength_model": "%LORA_WEIGHT%",
+      "model": [
+        "40",
+        0
+      ]
+    }
+  },
+  "28": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image"
+    }
+  },
+  "29": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    }
+  },
+  "22": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "%INPUT_IMAGE%"
+    }
+  },
+  "23": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        "28",
+        0
+      ],
+      "prompt": "%POSITIVE%",
+      "vae": [
+        "29",
+        0
+      ],
+      "image1": [
+        "22",
+        0
+      ]
+    }
+  },
+  "30": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        "28",
+        0
+      ],
+      "prompt": "",
+      "vae": [
+        "29",
+        0
+      ],
+      "image1": [
+        "22",
+        0
+      ]
+    }
+  },
+  "24": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "22",
+        0
+      ],
+      "vae": [
+        "29",
+        0
+      ]
+    }
+  },
+  "25": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": "%SEED%",
+      "steps": "%STEPS%",
+      "cfg": "%CFG%",
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": "%DENOISE%",
+      "model": [
+        "21",
+        0
+      ],
+      "positive": [
+        "23",
+        0
+      ],
+      "negative": [
+        "30",
+        0
+      ],
+      "latent_image": [
+        "24",
+        0
+      ]
+    }
+  },
+  "26": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "25",
+        0
+      ],
+      "vae": [
+        "29",
+        0
+      ]
+    }
+  },
+  "27": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "studio_edit",
+      "images": [
+        "26",
+        0
+      ]
+    }
+  }
+}

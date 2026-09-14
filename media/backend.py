@@ -101,7 +101,8 @@ def image_config():
     return {
         "base_url": _base_url(),
         "txt2img_workflow": os.environ.get("COMFYUI_TXT2IMG_WORKFLOW") or _pkg_workflow("txt2img.json"),
-        "edit_workflow": os.environ.get("COMFYUI_EDIT_WORKFLOW") or _pkg_workflow("edit.json"),
+        # Lightning 4스텝 LoRA 를 끼운 편집 그래프(2026-09-14). 구 edit.json 은 env 로 되돌릴 때 쓴다.
+        "edit_workflow": os.environ.get("COMFYUI_EDIT_WORKFLOW") or _pkg_workflow("edit_lightning.json"),
         "ckpt": os.environ.get("COMFYUI_CKPT") or "krea2_turbo-Q8_0.gguf",
         "edit_ckpt": os.environ.get("COMFYUI_EDIT_CKPT") or "qwen-image-edit-2511-Q4_K_M.gguf",
         # Krea2 텍스트 인코더 = Qwen3-VL-4B 단일(CLIPLoader type="krea2"). FLUX 시절의
@@ -112,7 +113,7 @@ def image_config():
         "nsfw_lora": os.environ.get("COMFYUI_NSFW_LORA") or "qwen-image-edit-plus-nsfw-lora.safetensors",
         "nsfw_lora_weight": float(os.environ.get("COMFYUI_NSFW_LORA_WEIGHT") or "0.9"),
         # 레퍼런스+대상 2-이미지 편집(Qwen-Image-Edit-Plus: image1=대상·image2=레퍼런스).
-        "edit_ref_workflow": os.environ.get("COMFYUI_EDIT_REF_WORKFLOW") or _pkg_workflow("edit_ref.json"),
+        "edit_ref_workflow": os.environ.get("COMFYUI_EDIT_REF_WORKFLOW") or _pkg_workflow("edit_ref_lightning.json"),
         "edit_ref_ckpt": os.environ.get("COMFYUI_EDIT_REF_CKPT") or "qwen-image-edit-2511-Q4_K_M.gguf",
     }
 
