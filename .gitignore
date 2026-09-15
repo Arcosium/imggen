@@ -71,3 +71,7 @@ quant_dataset*.json
 Thumbs.db
 /data
 사용설명서.docx
+/.code-review-graph
+/.superpowers
+/사용설명서.docx
+/.git

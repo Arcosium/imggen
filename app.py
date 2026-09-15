@@ -517,7 +517,7 @@ def build_ui():
         with gr.Row(elem_id="studio-masthead"):
             with gr.Column(scale=8):
                 gr.Markdown("# Image Studio", elem_id="studio-title")
-                gr.Markdown("Made by Hyunho Kim · ", elem_id="studio-byline")
+                gr.Markdown("Made by Hyunho Kim", elem_id="studio-byline")
             with gr.Column(scale=1, min_width=140):
                 gr.Markdown("")
 

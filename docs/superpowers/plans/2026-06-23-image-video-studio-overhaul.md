@@ -1246,7 +1246,7 @@ def build_ui():
         with gr.Row():
             with gr.Column(scale=8):
                 gr.Markdown("# 🚀 Image & Video Studio")
-                gr.Markdown("Made by Hyunho Kim · ")
+                gr.Markdown("Made by Hyunho Kim · <CONTACT_EMAIL>")
             with gr.Column(scale=1, min_width=140):
                 gr.Button("📖 사용설명서", link="manual", variant="secondary", size="sm")
 
