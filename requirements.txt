@@ -1,8 +1,7 @@
 gradio>=5.0.0,<6.0.0
-google-genai>=1.0.0
 pillow>=10.0.0
 fastapi>=0.110.0
 uvicorn>=0.27.0
 python-docx>=1.1.0
-pandas>=2.0.0
-openpyxl>=3.1.0
+# ComfyUI/LLM HTTP 호출은 stdlib urllib 사용 — 추가 의존 없음.
+# 테스트: pytest
