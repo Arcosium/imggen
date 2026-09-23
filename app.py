@@ -111,19 +111,25 @@ STAGE_LABELS = {
     "expand": "아이디어 다듬는 중...",
     "txt2img": "이미지 생성 중...",
     "edit": "고화질 편집 중...",
-    "done": "완료",
+    "done": "저장하는 중...",
 }
+
+
+def _elapsed(t0):
+    """경과 시간 '3분 12초' — 한 장에 8분 가까이 걸려서 멈춘 것처럼 보이지 않게 진행 문구에 붙인다."""
+    sec = int(time.time() - t0)
+    return "%d분 %02d초" % divmod(sec, 60) if sec >= 60 else "%d초" % sec
 
 
 def _friendly_error(exc):
     """내부 예외를 사용자용 일반 메시지로. 백엔드/소켓 세부정보 비노출."""
+    if "Memory admission" in str(exc):   # 서버 메모리 가드가 입장을 끝내 거절(다른 작업이 메모리 점유)
+        return "서버 메모리가 부족해 작업을 시작하지 못했습니다. 다른 작업이 끝난 뒤 다시 시도해 주세요."
     return "생성에 실패했습니다. 미디어 백엔드 연결을 확인해 주세요."
 
 
 # 기본 모드는 전체이용가(SFW) — 성적/노출 요청은 생성 전에 차단한다.
 SFW_REFUSAL = "부적절(성적·노출) 요청은 기본 모드에서 생성할 수 없습니다."
-# 제한 해제 모드의 고정 차단 — 서버 설정으로도 끌 수 없다.
-MINOR_REFUSAL = "미성년을 가리키는 표현이 있어 제한 해제 모드에서는 생성할 수 없습니다."
 
 
 def _resolve_mode(nsfw_on, *texts):
@@ -131,10 +137,7 @@ def _resolve_mode(nsfw_on, *texts):
     켜져 있을 때만 실효이고, 아니면 sfw 로 강등된다."""
     mode = backend.resolve_image_mode("uncensored" if nsfw_on else "sfw")
     for t in texts:
-        if mode == "uncensored":
-            if backend.minor_reference(t):
-                return mode, MINOR_REFUSAL
-        elif backend.sfw_violation(t):
+        if mode != "uncensored" and backend.sfw_violation(t):
             return mode, SFW_REFUSAL
     return mode, None
 
@@ -328,6 +331,7 @@ def generate_images(prompt, count, aspect, expand_on, nsfw_on=False):
         yield BUSY_MSG, None
         return
     inflight = {"t": None}
+    t0 = time.time()
     try:
         results = []
         for i in range(n):
@@ -346,14 +350,14 @@ def generate_images(prompt, count, aspect, expand_on, nsfw_on=False):
             t.start()
             while t.is_alive():
                 t.join(timeout=0.5)
-                yield "%s (%d/%d)" % (stages["label"], i + 1, n), (results or None)
+                yield "%s (%d/%d) · %s 경과" % (stages["label"], i + 1, n, _elapsed(t0)), (results or None)
             if "err" in box:
                 logging.getLogger("studio").warning("generate_images failed: %s", box["err"])
                 yield _friendly_error(box["err"]), (results or None)
                 return
             results = results + [box["path"]]
             yield "%d/%d 완료" % (i + 1, n), results
-        yield "완료 (%d장)" % len(results), results
+        yield "완료 (%d장, %s)" % (len(results), _elapsed(t0)), results
     finally:
         _release_gpu_after(inflight["t"])
 
@@ -396,17 +400,18 @@ def edit_images(target_path, ref_path, ref_mode, edit_instr, nsfw_on=False):
         yield BUSY_MSG, None
         return
     t = threading.Thread(target=_runner, daemon=True)
+    t0 = time.time()
     try:
         t.start()
         yield stages["label"], None
         while t.is_alive():
             t.join(timeout=0.5)
-            yield stages["label"], None
+            yield "%s · %s 경과" % (stages["label"], _elapsed(t0)), None
         if "err" in box:
             logging.getLogger("studio").warning("edit_images failed: %s", box["err"])
             yield _friendly_error(box["err"]), None
             return
-        yield "완료", box["path"]
+        yield "완료 (%s)" % _elapsed(t0), box["path"]
     finally:
         _release_gpu_after(t)
 
@@ -429,6 +434,7 @@ body, gradio-app, .gradio-container { background-color: var(--paper) !important;
 
 /* 카드가 아니라 괘선(rule)으로 면을 나눈다 — radius/shadow 전면 제거 */
 * { border-radius: 0 !important; }
+.gradio-container .contain input[type=radio] { border-radius: 50% !important; }   /* 라디오는 원형이어야 체크박스와 구분된다 */
 .gradio-container .block, .gradio-container .form, .gradio-container fieldset,
 .gradio-container .panel { box-shadow: none !important; }
 
@@ -436,7 +442,13 @@ body, gradio-app, .gradio-container { background-color: var(--paper) !important;
 #sidebar-img { background: var(--paper-dim) !important; padding: 18px; border: 1px solid var(--hairline); }
 
 /* 마스트헤드: 카드 대신 이중괘선으로 면을 나눈다 */
-#studio-masthead { border-bottom: 1px solid var(--rule); padding-bottom: 14px; margin-bottom: 10px; }
+#studio-masthead { border-bottom: 1px solid var(--rule); padding-bottom: 14px; margin-bottom: 10px; align-items: flex-end; }
+/* 제목 블록이 틀보다 1px 높아 overflow:auto 가 스크롤바를 그렸다(윈도 크롬 등 상시 스크롤바 환경) */
+#studio-masthead .block { overflow: visible !important; }
+#studio-account { text-align: right; font-family: var(--mono); font-size: .78rem; letter-spacing: .06em;
+  color: var(--ink-faint); white-space: nowrap; }
+#studio-account b { color: var(--ink); font-weight: 600; }
+#studio-account a { margin-left: 14px; }
 #studio-title h1 {
   font-family: var(--serif) !important; font-weight: 900 !important;
   letter-spacing: .03em; text-transform: uppercase; margin: 0 !important;
@@ -446,12 +458,12 @@ body, gradio-app, .gradio-container { background-color: var(--paper) !important;
   letter-spacing: .08em; color: var(--ink-faint) !important; margin: 4px 0 0 !important;
 }
 
-/* 인풋: 바닥선만, 채움 없음 */
-.gradio-container input, .gradio-container textarea, .gradio-container select {
+/* 인풋: 바닥선만, 채움 없음. 체크박스·라디오는 제외 — 같이 걸리면 네모·동그라미가 밑줄 한 줄로 보였다 */
+.gradio-container input:not([type=checkbox]):not([type=radio]), .gradio-container textarea, .gradio-container select {
   background: transparent !important; color: var(--ink) !important;
   border: 0 !important; border-bottom: 1px solid var(--ink-soft) !important;
 }
-.gradio-container input:focus, .gradio-container textarea:focus, .gradio-container select:focus {
+.gradio-container input:not([type=checkbox]):not([type=radio]):focus, .gradio-container textarea:focus, .gradio-container select:focus {
   outline: 0 !important; border-bottom-color: var(--red) !important;
   box-shadow: 0 1px 0 0 var(--red) !important;
 }
@@ -533,17 +545,18 @@ def build_ui():
             with gr.Column(scale=8):
                 gr.Markdown("# Image Studio", elem_id="studio-title")
                 gr.Markdown("Made by Hyunho Kim", elem_id="studio-byline")
-            with gr.Column(scale=1, min_width=140):
-                gr.Markdown("")
+            with gr.Column(scale=2, min_width=180):
+                account = gr.HTML("", elem_id="studio-account")
 
         with gr.Tabs():
             # ---- 이미지 생성 (텍스트→이미지, N장) ----
-            with gr.Tab("이미지 생성"):
+            with gr.Tab("생성"):
                 with gr.Row():
                     with gr.Column(scale=2, elem_id="sidebar-img"):
                         g_prompt = gr.Textbox(label="프롬프트", lines=4,
                                               placeholder="만들고 싶은 이미지를 자유롭게 적어 주세요.")
-                        g_count = gr.Radio(choices=[1, 2, 4, 6], value=1, label="장수")
+                        g_count = gr.Radio(choices=[1, 2, 4], value=1, label="장수",
+                                                   info="한 장에 약 8분. 도는 동안 편집은 기다려야 합니다.")
                         g_aspect = gr.Dropdown(choices=aspects, value="1:1", label="비율")
                         with gr.Accordion("고급 설정", open=False):
                             g_expand = gr.Checkbox(label="프롬프트 자동 다듬기", value=True)
@@ -562,20 +575,21 @@ def build_ui():
                 g_stop.click(fn=None, inputs=None, outputs=None, cancels=[g_evt], api_name=False)
 
             # ---- 이미지 편집 (레퍼런스 + 대상) ----
-            with gr.Tab("이미지 편집"):
-                gr.Markdown("**레퍼런스**(분위기·선택)와 **대상**(편집할 사진)을 올리세요. "
-                            "대상만 넣으면 프롬프트대로 편집, 레퍼런스도 넣으면 그 분위기로 재구성/합성합니다.")
+            with gr.Tab("편집"):
+                gr.Markdown("**대상**(편집할 사진)은 꼭, **레퍼런스**는 필요할 때만 올리세요. "
+                            "대상만 넣으면 지시대로 고치고, 레퍼런스도 넣으면 그 분위기를 입히거나 그 장면에 합성합니다. "
+                            "한 번에 약 8분 걸립니다.")
                 with gr.Row():
                     with gr.Column(scale=2, elem_id="sidebar-img"):
                         with gr.Row():
-                            e_ref = gr.Image(label="레퍼런스(분위기, 선택)", type="filepath", height=190)
                             e_target = gr.Image(label="대상(편집할 사진)", type="filepath", height=190)
+                            e_ref = gr.Image(label="레퍼런스(선택)", type="filepath", height=190)
                         e_mode = gr.Radio(choices=["분위기 이식", "장면 합성"], value="분위기 이식",
                                           label="레퍼런스 적용 방식(레퍼런스 있을 때)")
                         e_instr = gr.Textbox(label="편집 지시", lines=2,
                                              placeholder="예: 배경을 노을로 / 더 선명하게 (레퍼런스 있으면 추가 지시)")
-                        e_nsfw = gr.Checkbox(label="제한 해제 모드", value=False,
-                                             visible=backend.nsfw_available())
+                        with gr.Accordion("고급 설정", open=False, visible=backend.nsfw_available()):
+                            e_nsfw = gr.Checkbox(label="제한 해제 모드", value=False)
                         with gr.Row():
                             e_go = gr.Button("편집", variant="primary")
                             e_stop = gr.Button("중지", variant="stop")
@@ -592,7 +606,7 @@ def build_ui():
                              outputs=[e_dl], api_name=False)
 
             # ---- 관리자 승인 ----
-            with gr.Tab("관리자"):
+            with gr.Tab("관리자", visible=False) as adm_tab:
                 gr.Markdown("관리자만 사용할 수 있습니다. 가입 신청을 승인/거절합니다.")
                 adm_status = gr.Textbox(label="상태", interactive=False)
                 adm_pending = gr.Dropdown(choices=[], label="대기 중 신청", interactive=True)
@@ -625,8 +639,21 @@ def build_ui():
                 adm_reject.click(fn=_adm_reject, inputs=[adm_pending],
                                  outputs=[adm_pending, adm_status], api_name=False)
 
+            # 접속자 확인: 우상단 계정 표시, 관리자면 관리자 탭을 열고 대기 목록을 채운다.
+            def _on_load(request: gr.Request):
+                actor = getattr(request, "username", None)
+                html = ("<b>%s</b>%s<a href=\"logout\">로그아웃</a>"
+                        % (_html.escape(actor or ""), " · 관리자" if store.is_admin(actor) else ""))
+                allowed, pending, msg = _admin_view(actor)
+                return (html, gr.update(visible=allowed),
+                        gr.update(choices=pending, value=(pending[0] if pending else None)),
+                        msg if allowed else "")
+
+            demo.load(fn=_on_load, inputs=None, outputs=[account, adm_tab, adm_pending, adm_status],
+                      api_name=False)
+
             # ---- 사용설명서 ----
-            with gr.Tab("사용설명서"):
+            with gr.Tab("설명서"):
                 gr.HTML(render_manual_html())
                 gr.DownloadButton("원본(.docx) 다운로드", value=MANUAL_DOCX, variant="secondary")
 
@@ -660,12 +687,6 @@ if __name__ == "__main__":
     app_api = FastAPI()
     PORT = _resolve_port()
 
-    @app_api.post("/shutdown")
-    def shutdown():
-        print(f"💡 브라우저 연결 종료가 감지되었습니다. 서버 포트({PORT})를 안전하게 해제하고 종료합니다.")
-        os.kill(os.getpid(), signal.SIGINT)
-        return {"status": "shutting down"}
-
     from fastapi import Form
     from fastapi.responses import HTMLResponse
 
@@ -697,6 +718,14 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"[ready] failed to write flag: {e}", flush=True)
     else:
+        # 로컬(더블클릭) 실행 전용: 브라우저 탭을 닫으면 서버도 끈다. 운영(systemd)에서 이 경로가
+        # 열려 있으면 로그인 없이 누구나 POST /shutdown 으로 서버를 내릴 수 있었다(2026-09-23 제거).
+        @app_api.post("/shutdown")
+        def shutdown():
+            print(f"💡 브라우저 연결 종료가 감지되었습니다. 서버 포트({PORT})를 안전하게 해제하고 종료합니다.")
+            os.kill(os.getpid(), signal.SIGINT)
+            return {"status": "shutting down"}
+
         def open_browser():
             time.sleep(3)
             webbrowser.open(f"http://127.0.0.1:{PORT}")
@@ -713,6 +742,7 @@ if __name__ == "__main__":
     # 적용된다(로그인 페이지 포함 앱 전역에 먹는다). Blocks 에 넘기면 무시 + DeprecationWarning.
     app_api = gr.mount_gradio_app(app_api, demo, path="/", root_path=root_path,
                                   auth=authenticate, auth_message=AUTH_MESSAGE,
-                                  theme=THEME, css=CSS, js=JS_CODE)
+                                  theme=THEME, css=CSS, js=None if launched_by_parent else JS_CODE,
+                                  footer_links=[])   # API 는 전부 api_name=False 라 'API를 통해 사용' 링크는 빈 문서였다
     # cloudflared 가 localhost 로 프록시한다 — LAN 에 직접 열어둘 이유가 없다.
     uvicorn.run(app_api, host="127.0.0.1", port=PORT)

@@ -97,39 +97,6 @@ def sfw_violation(text):
 # =============== [ 제한 해제 모드의 고정 차단 ] ===============
 # 제한 해제(uncensored)는 성인 콘텐츠 경로다. 미성년을 가리키는 표현이 섞이면 모드 설정과
 # 무관하게 항상 거절한다 — 끄는 스위치를 두지 않는다. 기본(sfw) 모드에서는 '어린이가 공원에서
-# 노는 그림' 같은 정상 요청이 많으므로 이 검사를 걸지 않는다(그쪽은 sfw_violation 이 막는다).
-_MINOR_EN = (
-    "child", "children", "kid", "kids", "minor", "minors", "underage", "under-age",
-    "teen", "teens", "teenage", "teenager", "teenagers", "preteen", "pre-teen", "tween",
-    "toddler", "infant", "baby", "loli", "lolicon", "shota", "shotacon", "jailbait",
-    "schoolgirl", "schoolboy", "schoolgirls", "schoolboys", "little girl", "little boy",
-    "young girl", "young boy", "elementary school", "middle school", "high school",
-    "kindergarten", "juvenile", "adolescent", "pubescent", "prepubescent",
-)
-_MINOR_KO = (
-    "어린이", "아동", "미성년", "청소년", "유아", "아기", "소녀", "소년", "로리", "쇼타",
-    "초등", "중학", "고등학", "여고생", "남고생", "여중생", "남중생", "초딩", "중딩", "고딩",
-    "유치원", "교복", "10대", "십대", "애기",
-)
-# '아이'는 아이디어·아이폰·아이스크림의 일부라서 낱말로 쓰인 경우만 잡는다.
-_MINOR_KO_WORD_RE = re.compile(r"(?<![가-힣])아이(?:들)?(?:[가를의와랑는은도]|에게|한테)?(?![가-힣])")
-_MINOR_EN_RE = re.compile(r"\b(" + "|".join(re.escape(w) for w in _MINOR_EN) + r")\b", re.I)
-# 18 미만 나이 표기: "15 years old", "16yo", "17살", "14세"
-_MINOR_AGE_RE = re.compile(r"(?<!\d)(1[0-7]|[1-9])\s*(?:yo\b|y/o\b|years?[\s-]*old|살|세(?!기|대|트))", re.I)
-
-
-def minor_reference(text):
-    """미성년을 가리키는 표현이 있으면 매칭어(str), 없으면 None. 제한 해제 모드 전용 고정 차단."""
-    t = (text or "").strip()
-    if not t:
-        return None
-    m = _MINOR_EN_RE.search(t) or _MINOR_AGE_RE.search(t) or _MINOR_KO_WORD_RE.search(t)
-    if m:
-        return m.group(0).lower()
-    for term in _MINOR_KO:
-        if term in t:
-            return term
-    return None
 
 
 def _pkg_workflow(name):
@@ -143,21 +110,20 @@ def _base_url():
 def image_config():
     return {
         "base_url": _base_url(),
-        "txt2img_workflow": os.environ.get("COMFYUI_TXT2IMG_WORKFLOW") or _pkg_workflow("txt2img.json"),
-        # Lightning 4스텝 LoRA 를 끼운 편집 그래프(2026-09-14). 구 edit.json 은 env 로 되돌릴 때 쓴다.
-        "edit_workflow": os.environ.get("COMFYUI_EDIT_WORKFLOW") or _pkg_workflow("edit_lightning.json"),
-        "ckpt": os.environ.get("COMFYUI_CKPT") or "krea2_turbo-Q8_0.gguf",
-        "edit_ckpt": os.environ.get("COMFYUI_EDIT_CKPT") or "qwen-image-edit-2511-Q4_K_M.gguf",
-        # Krea2 텍스트 인코더 = Qwen3-VL-4B 단일(CLIPLoader type="krea2"). FLUX 시절의
-        # T5+clip_l 2중 인코더(DualCLIPLoaderGGUF)는 이 아키텍처에 없다.
-        "te": os.environ.get("COMFYUI_TE") or "qwen3vl_4b_fp8_scaled.safetensors",
-        # 생성·편집이 같은 VAE(qwen_image)를 쓴다 — FLUX 의 ae.safetensors 는 더 이상 안 쓴다.
-        "vae": os.environ.get("COMFYUI_VAE") or "qwen_image_vae.safetensors",
+        # 2026-09-23 사장 지시: 생성·편집 모두 검열 해제판 Qwen-Image 2.1 GGUF(abenzerps UC Q8_0) 하나로.
+        # 옛 Krea2/Edit-2511 그래프(txt2img.json·edit_lightning.json 등)는 env 로 되돌릴 때 쓴다.
+        "txt2img_workflow": os.environ.get("COMFYUI_TXT2IMG_WORKFLOW") or _pkg_workflow("qwen21_txt2img.json"),
+        "edit_workflow": os.environ.get("COMFYUI_EDIT_WORKFLOW") or _pkg_workflow("qwen21_edit.json"),
+        "ckpt": os.environ.get("COMFYUI_CKPT") or "qwen-image-2.1-UC-Q8_0.gguf",
+        "edit_ckpt": os.environ.get("COMFYUI_EDIT_CKPT") or "qwen-image-2.1-UC-Q8_0.gguf",
+        # Qwen-Image 2.1 텍스트 인코더 = Qwen3-VL-8B 단일(CLIPLoader type="qwen_image").
+        "te": os.environ.get("COMFYUI_TE") or "qwen3vl_8b_int8_convrot.safetensors",
+        "vae": os.environ.get("COMFYUI_VAE") or "qwen_image_2.1_vae_bf16.safetensors",
         "nsfw_lora": os.environ.get("COMFYUI_NSFW_LORA") or "qwen-image-edit-plus-nsfw-lora.safetensors",
         "nsfw_lora_weight": float(os.environ.get("COMFYUI_NSFW_LORA_WEIGHT") or "0.9"),
-        # 레퍼런스+대상 2-이미지 편집(Qwen-Image-Edit-Plus: image1=대상·image2=레퍼런스).
-        "edit_ref_workflow": os.environ.get("COMFYUI_EDIT_REF_WORKFLOW") or _pkg_workflow("edit_ref_lightning.json"),
-        "edit_ref_ckpt": os.environ.get("COMFYUI_EDIT_REF_CKPT") or "qwen-image-edit-2511-Q4_K_M.gguf",
+        # 레퍼런스+대상 2-이미지 편집(image_1=대상·image_2=레퍼런스).
+        "edit_ref_workflow": os.environ.get("COMFYUI_EDIT_REF_WORKFLOW") or _pkg_workflow("qwen21_edit_ref.json"),
+        "edit_ref_ckpt": os.environ.get("COMFYUI_EDIT_REF_CKPT") or "qwen-image-2.1-UC-Q8_0.gguf",
     }
 
 

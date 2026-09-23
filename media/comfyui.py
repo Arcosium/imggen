@@ -97,6 +97,12 @@ def poll_history(base_url, prompt_id, timeout=300, interval=1.0):
         entry = hist.get(prompt_id)
         if entry and entry.get("outputs"):
             return entry["outputs"]
+        # 실패한 잡은 outputs 가 비어 있어 예전엔 timeout(30분)까지 헛돌았다 — 상태를 보고 바로 끝낸다.
+        status = (entry or {}).get("status") or {}
+        if status.get("status_str") == "error":
+            msgs = [m[1].get("exception_message", "") for m in status.get("messages", [])
+                    if m and m[0] == "execution_error"]
+            raise RuntimeError("ComfyUI job failed: %s" % ("; ".join(msgs) or prompt_id))
         time.sleep(interval)
     raise TimeoutError("ComfyUI history timeout: %s" % prompt_id)
 

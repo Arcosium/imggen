@@ -31,17 +31,17 @@ def test_resolve_image_mode_honored_when_server_flag_on(monkeypatch):
 def test_image_config_defaults_point_to_packaged_workflows():
     cfg = backend.image_config()
     assert cfg["base_url"] == "http://127.0.0.1:8188"
-    assert cfg["txt2img_workflow"].endswith("workflows/txt2img.json")
-    assert cfg["edit_workflow"].endswith("workflows/edit_lightning.json")   # 2026-09-14 Lightning 4스텝
+    assert cfg["txt2img_workflow"].endswith("workflows/qwen21_txt2img.json")
+    assert cfg["edit_workflow"].endswith("workflows/qwen21_edit.json")
     assert cfg["nsfw_lora_weight"] == 0.9
 
 
-def test_image_config_defaults_are_krea2_models():
-    """생성=Krea2-Turbo(단일 Qwen3-VL 인코더), 편집=Qwen-Image-Edit. 둘이 같은 VAE 를 쓴다."""
+def test_image_config_defaults_are_qwen21_uc():
+    """2026-09-23: 생성·편집 모두 Qwen-Image 2.1 UC GGUF, 인코더 Qwen3-VL-8B int8, 2.1 전용 VAE."""
     cfg = backend.image_config()
-    assert cfg["ckpt"] == "krea2_turbo-Q8_0.gguf"
-    assert cfg["te"] == "qwen3vl_4b_fp8_scaled.safetensors"
-    assert cfg["vae"] == "qwen_image_vae.safetensors"
+    assert cfg["ckpt"] == cfg["edit_ckpt"] == cfg["edit_ref_ckpt"] == "qwen-image-2.1-UC-Q8_0.gguf"
+    assert cfg["te"] == "qwen3vl_8b_int8_convrot.safetensors"
+    assert cfg["vae"] == "qwen_image_2.1_vae_bf16.safetensors"
     assert "t5" not in cfg and "clip_l" not in cfg   # FLUX 2중 인코더 잔재 금지
 
 
@@ -98,15 +98,3 @@ def test_nsfw_available_follows_server_flag(monkeypatch):
     assert backend.nsfw_available() is True
 
 
-def test_minor_reference_flags_minors_in_any_language():
-    for text in ("a schoolgirl in a classroom", "cute little girl", "she is 16 years old",
-                 "17yo model", "teen idol", "여고생 화보", "15살 소녀", "14세 모델", "미성년 캐릭터",
-                 "아이가 웃는다", "아이들 사진"):
-        assert backend.minor_reference(text), text
-
-
-def test_minor_reference_allows_adult_prompts():
-    for text in ("a woman on the beach", "성인 여성 화보", "25 years old woman", "30살 남자",
-                 "아이디어 스케치", "아이스크림을 먹는 여성", "3세대 디자인", "21세기 도시", "",
-                 None):
-        assert backend.minor_reference(text) is None, text

@@ -61,3 +61,12 @@ def test_free_memory_swallows_errors(monkeypatch):
 
     monkeypatch.setattr(comfyui.urllib.request, "urlopen", _boom)
     assert comfyui.free_memory("http://x:8188") is False
+
+
+def test_poll_history_raises_on_failed_job(monkeypatch):
+    hist = {"p": {"outputs": {}, "status": {"status_str": "error", "messages": [
+        ["execution_error", {"exception_message": "Memory admission timed out"}]]}}}
+    monkeypatch.setattr(comfyui, "_get_json", lambda url: hist)
+    import pytest
+    with pytest.raises(RuntimeError, match="Memory admission"):
+        comfyui.poll_history("http://x", "p", timeout=5)

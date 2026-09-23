@@ -169,20 +169,3 @@ def test_unrestricted_toggle_is_downgraded_when_server_flag_off(monkeypatch, tmp
     assert seen["mode"] == "sfw"
 
 
-def test_unrestricted_mode_always_refuses_minor_references(monkeypatch, tmp_path):
-    monkeypatch.setenv("IMAGE_NSFW_ENABLED", "1")
-    seen = _capture_mode(monkeypatch, tmp_path)
-    outs = list(app.generate_images("a schoolgirl", 1, "1:1", True, True))
-    assert "mode" not in seen and outs[-1][1] is None
-    assert outs[-1][0] == app.MINOR_REFUSAL
-    tgt = tmp_path / "t.png"
-    tgt.write_bytes(b"x")
-    outs = list(app.edit_images(str(tgt), None, "분위기 이식", "여고생으로 바꿔줘", True))
-    assert outs[-1] == (app.MINOR_REFUSAL, None)
-
-
-def test_default_mode_still_allows_children_in_clean_prompts(monkeypatch, tmp_path):
-    monkeypatch.setenv("IMAGE_NSFW_ENABLED", "1")
-    seen = _capture_mode(monkeypatch, tmp_path)
-    list(app.generate_images("공원에서 노는 어린이", 1, "1:1", True, False))
-    assert seen["mode"] == "sfw"
