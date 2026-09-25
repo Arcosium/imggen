@@ -156,21 +156,71 @@ _GPU_LOCK = GpuLock()
 BUSY_MSG = "지금 다른 작업(생성 또는 편집)이 진행 중입니다. 끝난 뒤 다시 시도해 주세요."
 
 
-def _release_gpu_after(worker):
-    """워커 스레드가 끝난 뒤 락을 푼다.
+# =============== [ 계정별 백그라운드 작업 ] ===============
+# Gradio 는 SSE 연결이 끊기면(앱 전환·화면 잠금) 그 세션의 이벤트를 취소한다. 예전엔 생성이 그
+# 이벤트(제너레이터) 안에서 돌아서, 끊기는 순간 남은 장이 버려지고 다시 열면 첫 화면이었다
+# (백엔드에 이미 넘긴 한 장만 outputs/ 에 떨어지고 화면엔 안 뜸). 이제 작업은 서버 스레드에서
+# 계정별로 돌고, 화면은 타이머(poll_jobs)로 상태를 읽어 온다 — 다시 열어도 이어서 보인다.
+_JOBS = {}   # (계정, "gen"|"edit") -> job. ponytail: 프로세스 메모리 — 서버 재시작 때 사라진다(파일은 outputs/ 에 남음).
 
-    ⏹️ 중지(Gradio cancels)는 제너레이터에 GeneratorExit 를 던질 뿐, 백엔드에 보낸 작업은
-    그대로 돈다. 그때 락을 바로 풀면 다음 작업이 겹쳐 붙어 결국 OOM 이다 — 워커가 실제로
-    끝날 때까지 붙들고 있는다. (Lock 은 RLock 과 달리 다른 스레드에서 release 해도 된다.)"""
-    if worker is None or not worker.is_alive():
-        _GPU_LOCK.release()
-        return
 
-    def _wait():
-        worker.join()
-        _GPU_LOCK.release()
+def _job_key(request, kind):
+    return (getattr(request, "username", None), kind)
 
-    threading.Thread(target=_wait, daemon=True).start()
+
+def _job_view(job):
+    """(상태문구, 결과) — 도는 중이면 경과 시간을 붙인다(한 장에 8분이라 멈춘 것처럼 보이지 않게)."""
+    if job["done"]:
+        return job["status"], job["result"]
+    status = "중지하는 중 — 지금 장까지 마치고 멈춥니다" if job["cancel"] else job["status"]
+    return "%s · %s 경과" % (status, _elapsed(job["t0"])), job["result"]
+
+
+def _start_job(key, work):
+    """GPU 락을 잡고 work(job) 를 서버 스레드에서 돌린다. 락은 work 가 실제로 끝난 뒤에 푼다 —
+    백엔드 작업이 도는 중에 풀면 다음 작업이 겹쳐 붙어 OOM 이다. (상태, 결과, 타이머) 반환."""
+    if not _GPU_LOCK.acquire(blocking=False):
+        return BUSY_MSG, gr.skip(), gr.skip()
+    job = {"status": "시작하는 중...", "result": None, "done": False, "cancel": False, "t0": time.time()}
+    _JOBS[key] = job
+
+    def _run():
+        try:
+            work(job)
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger("studio").warning("%s failed: %s", key[1], exc)
+            job["status"] = _friendly_error(exc)
+        finally:
+            _GPU_LOCK.release()
+            job["done"] = True      # 락을 푼 뒤에 끝났다고 알린다 — 완료를 본 화면이 바로 다음 작업을 걸 수 있게
+
+    threading.Thread(target=_run, daemon=True).start()
+    return (*_job_view(job), gr.Timer(active=True))
+
+
+def poll_jobs(seen, request: gr.Request = None):
+    """타이머·페이지 로드 — 이 계정의 생성·편집 상태를 화면에 싣는다. 결과는 바뀔 때만 보낸다
+    (같은 갤러리를 매번 다시 보내면 보던 미리보기가 튄다). 도는 작업이 없으면 타이머를 끈다."""
+    seen, outs, running = dict(seen or {}), [], False
+    for kind in ("gen", "edit"):
+        job = _JOBS.get(_job_key(request, kind))
+        if job is None:
+            outs += [gr.skip(), gr.skip()]
+            continue
+        status, result = _job_view(job)
+        running = running or not job["done"]
+        outs += [status, gr.skip() if result == seen.get(kind) else result]
+        seen[kind] = result
+    return (*outs, seen, gr.Timer(active=running))
+
+
+def stop_job(kind):
+    """중지 버튼 — 백엔드에 넘긴 장은 멈출 수 없어서, 그 장까지 마치고 다음 장부터 멈춘다."""
+    def _stop(request: gr.Request = None):
+        job = _JOBS.get(_job_key(request, kind))
+        if job is not None:
+            job["cancel"] = True
+    return _stop
 
 
 # =============== [ 인증: 로그인 / 가입 ] ===============
@@ -309,74 +359,49 @@ def _signup_result_html(ok, msg):
 </div></body></html>""" % (_SIGNUP_FONTS, _SIGNUP_CSS, cls, _html.escape(msg)))
 
 
-def generate_images(prompt, count, aspect, expand_on, nsfw_on=False):
-    """이미지 생성(텍스트→이미지, N장). (상태문구, 갤러리리스트) 를 단계별로 yield."""
+def generate_images(prompt, count, aspect, expand_on, nsfw_on=False, request: gr.Request = None):
+    """이미지 생성(텍스트→이미지, N장)을 계정별 백그라운드 작업으로 시작한다. (상태, 갤러리, 타이머)."""
     if not (prompt and prompt.strip()):
-        yield "프롬프트를 입력해 주세요.", None
-        return
+        return "프롬프트를 입력해 주세요.", None, gr.skip()
     mode, refusal = _resolve_mode(nsfw_on, prompt)
     if refusal:
-        yield refusal, None
-        return
+        return refusal, None, gr.skip()
     try:
         n = max(1, min(int(count or 1), 8))
     except (TypeError, ValueError):
         n = 1
-    stages = {"label": "시작하는 중..."}
 
-    def _on_stage(s):
-        stages["label"] = STAGE_LABELS.get(s, stages["label"])
-
-    if not _GPU_LOCK.acquire(blocking=False):
-        yield BUSY_MSG, None
-        return
-    inflight = {"t": None}
-    t0 = time.time()
-    try:
-        results = []
+    def _work(job):
         for i in range(n):
-            box = {}
+            if job["cancel"]:
+                break
+            label = ["시작하는 중..."]
 
-            def _runner():
-                try:
-                    res = pipeline.make_image(idea=prompt, prompt=None, aspect=aspect, mode=mode,
-                                              expand=bool(expand_on), on_stage=_on_stage)
-                    box["path"] = _save_bytes(res["image"], "png")
-                except Exception as exc:  # noqa: BLE001
-                    box["err"] = exc
+            def _on_stage(s):
+                label[0] = STAGE_LABELS.get(s, label[0])
+                job["status"] = "%s (%d/%d)" % (label[0], i + 1, n)
 
-            t = threading.Thread(target=_runner, daemon=True)
-            inflight["t"] = t
-            t.start()
-            while t.is_alive():
-                t.join(timeout=0.5)
-                yield "%s (%d/%d) · %s 경과" % (stages["label"], i + 1, n, _elapsed(t0)), (results or None)
-            if "err" in box:
-                logging.getLogger("studio").warning("generate_images failed: %s", box["err"])
-                yield _friendly_error(box["err"]), (results or None)
-                return
-            results = results + [box["path"]]
-            yield "%d/%d 완료" % (i + 1, n), results
-        yield "완료 (%d장, %s)" % (len(results), _elapsed(t0)), results
-    finally:
-        _release_gpu_after(inflight["t"])
+            _on_stage(None)
+            res = pipeline.make_image(idea=prompt, prompt=None, aspect=aspect, mode=mode,
+                                      expand=bool(expand_on), on_stage=_on_stage)
+            job["result"] = (job["result"] or []) + [_save_bytes(res["image"], "png")]
+        job["status"] = "%s (%d장, %s)" % ("중지" if job["cancel"] else "완료",
+                                          len(job["result"] or []), _elapsed(job["t0"]))
+
+    return _start_job(_job_key(request, "gen"), _work)
 
 
-def edit_images(target_path, ref_path, ref_mode, edit_instr, nsfw_on=False):
-    """이미지 편집: 대상만→프롬프트 편집 / 레퍼런스+대상→분위기 이식·장면 합성. (상태, 이미지) yield."""
+def edit_images(target_path, ref_path, ref_mode, edit_instr, nsfw_on=False, request: gr.Request = None):
+    """이미지 편집: 대상만→프롬프트 편집 / 레퍼런스+대상→분위기 이식·장면 합성.
+    계정별 백그라운드 작업으로 시작한다. (상태, 이미지, 타이머)."""
     if not target_path:
-        yield "편집할 대상 사진을 올려 주세요.", None
-        return
+        return "편집할 대상 사진을 올려 주세요.", None, gr.skip()
     mode, refusal = _resolve_mode(nsfw_on, edit_instr)
     if refusal:
-        yield refusal, None
-        return
-    stages = {"label": "편집 중..."}
+        return refusal, None, gr.skip()
 
-    def _on_stage(s):
-        stages["label"] = STAGE_LABELS.get(s, stages["label"])
-
-    def _work():
+    def _work(job):
+        job["status"] = "편집 중..."
         with open(target_path, "rb") as f:
             tgt = f.read()
         if ref_path:
@@ -386,34 +411,10 @@ def edit_images(target_path, ref_path, ref_mode, edit_instr, nsfw_on=False):
                                           composite=("합성" in (ref_mode or "")))
         else:
             out = pipeline.edit_image(tgt, edit_instr or "enhance and refine, keep composition", mode=mode)
-        return _save_bytes(out, "png")
+        job["result"] = _save_bytes(out, "png")
+        job["status"] = "완료 (%s)" % _elapsed(job["t0"])
 
-    box = {}
-
-    def _runner():
-        try:
-            box["path"] = _work()
-        except Exception as exc:  # noqa: BLE001
-            box["err"] = exc
-
-    if not _GPU_LOCK.acquire(blocking=False):
-        yield BUSY_MSG, None
-        return
-    t = threading.Thread(target=_runner, daemon=True)
-    t0 = time.time()
-    try:
-        t.start()
-        yield stages["label"], None
-        while t.is_alive():
-            t.join(timeout=0.5)
-            yield "%s · %s 경과" % (stages["label"], _elapsed(t0)), None
-        if "err" in box:
-            logging.getLogger("studio").warning("edit_images failed: %s", box["err"])
-            yield _friendly_error(box["err"]), None
-            return
-        yield "완료 (%s)" % _elapsed(t0), box["path"]
-    finally:
-        _release_gpu_after(t)
+    return _start_job(_job_key(request, "edit"), _work)
 
 
 CSS = """
@@ -547,6 +548,9 @@ def build_ui():
                 gr.Markdown("Made by Hyunho Kim", elem_id="studio-byline")
             with gr.Column(scale=2, min_width=180):
                 account = gr.HTML("", elem_id="studio-account")
+        # 작업 상태 읽기 — 작업이 도는 동안만 켠다(poll_jobs 가 끝나면 끈다).
+        poll = gr.Timer(2, active=False)
+        seen = gr.State({})
 
         with gr.Tabs():
             # ---- 이미지 생성 (텍스트→이미지, N장) ----
@@ -569,10 +573,9 @@ def build_ui():
                         g_status = gr.Textbox(label="진행 상태", interactive=False)
                         g_gallery = gr.Gallery(label="결과", elem_id="result-img", height=520,
                                                columns=2, object_fit="contain")
-                g_evt = g_go.click(fn=generate_images,
-                                   inputs=[g_prompt, g_count, g_aspect, g_expand, g_nsfw],
-                                   outputs=[g_status, g_gallery], api_name=False)
-                g_stop.click(fn=None, inputs=None, outputs=None, cancels=[g_evt], api_name=False)
+                g_go.click(fn=generate_images, inputs=[g_prompt, g_count, g_aspect, g_expand, g_nsfw],
+                           outputs=[g_status, g_gallery, poll], api_name=False)
+                g_stop.click(fn=stop_job("gen"), inputs=None, outputs=None, api_name=False)
 
             # ---- 이미지 편집 (레퍼런스 + 대상) ----
             with gr.Tab("편집"):
@@ -598,10 +601,9 @@ def build_ui():
                         e_out = gr.Image(label="결과", elem_id="result-img", height=520,
                                          type="filepath", interactive=False)
                         e_dl = gr.DownloadButton("다운로드", variant="secondary")
-                e_evt = e_go.click(fn=edit_images,
-                                   inputs=[e_target, e_ref, e_mode, e_instr, e_nsfw],
-                                   outputs=[e_status, e_out], api_name=False)
-                e_stop.click(fn=None, inputs=None, outputs=None, cancels=[e_evt], api_name=False)
+                e_go.click(fn=edit_images, inputs=[e_target, e_ref, e_mode, e_instr, e_nsfw],
+                           outputs=[e_status, e_out, poll], api_name=False)
+                e_stop.click(fn=stop_job("edit"), inputs=None, outputs=None, api_name=False)
                 e_out.change(fn=lambda p: gr.update(value=p), inputs=[e_out],
                              outputs=[e_dl], api_name=False)
 
@@ -651,6 +653,10 @@ def build_ui():
 
             demo.load(fn=_on_load, inputs=None, outputs=[account, adm_tab, adm_pending, adm_status],
                       api_name=False)
+            # 다시 열거나 새로고침하면 이 계정의 진행 중·마지막 작업을 복원하고, 도는 중이면 타이머를 켠다.
+            job_outs = [g_status, g_gallery, e_status, e_out, seen, poll]
+            demo.load(fn=poll_jobs, inputs=[seen], outputs=job_outs, api_name=False)
+            poll.tick(fn=poll_jobs, inputs=[seen], outputs=job_outs, show_progress="hidden", api_name=False)
 
             # ---- 사용설명서 ----
             with gr.Tab("설명서"):
