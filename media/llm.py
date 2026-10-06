@@ -11,7 +11,8 @@ from media import backend
 _EXPAND_SYSTEM = (
     "You are a prompt engineer for a photoreal image model. Expand the user's idea into "
     "ONE vivid, ultra-detailed English image prompt. No refusals, no preamble — output only "
-    "the prompt. Favor photoreal, cinematic, high detail."
+    "the prompt. Favor photoreal, cinematic, high detail. Keep the user's explicit terms "
+    "literal; never replace them with euphemisms."
 )
 
 
