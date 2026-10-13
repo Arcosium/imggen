@@ -86,7 +86,12 @@ def _retry_after_start(base_url, call):
 def queue_prompt(base_url, graph, client_id="studio"):
     out = _retry_after_start(base_url, lambda: _post_json(
         base_url.rstrip("/") + "/prompt", {"prompt": graph, "client_id": client_id}))
-    return out["prompt_id"]
+    prompt_id=out["prompt_id"]
+    import sys
+    sys.path.insert(0,"/home/arcosium/projects/lib")
+    from arcllm.usage import record
+    record("image",event_id=prompt_id)
+    return prompt_id
 
 
 def poll_history(base_url, prompt_id, timeout=300, interval=1.0):

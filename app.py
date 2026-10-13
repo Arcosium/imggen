@@ -110,7 +110,7 @@ def render_manual_html():
 STAGE_LABELS = {
     "expand": "아이디어 다듬는 중...",
     "txt2img": "이미지 생성 중...",
-    "edit": "고화질 편집 중...",
+    "edit": "이미지 편집 중...",
     "done": "저장하는 중...",
 }
 
@@ -560,7 +560,7 @@ def build_ui():
                         g_prompt = gr.Textbox(label="프롬프트", lines=4,
                                               placeholder="만들고 싶은 이미지를 자유롭게 적어 주세요.")
                         g_count = gr.Radio(choices=[1, 2, 4], value=1, label="장수",
-                                                   info="한 장에 약 8분. 도는 동안 편집은 기다려야 합니다.")
+                                                   info="생성과 편집은 한 번에 하나씩 처리합니다. 해상도와 서버 작업량에 따라 시간이 달라집니다.")
                         g_aspect = gr.Dropdown(choices=aspects, value="1:1", label="비율")
                         with gr.Accordion("고급 설정", open=False):
                             g_expand = gr.Checkbox(label="프롬프트 자동 다듬기", value=True)
@@ -581,16 +581,16 @@ def build_ui():
             with gr.Tab("편집"):
                 gr.Markdown("**대상**(편집할 사진)은 꼭, **레퍼런스**는 필요할 때만 올리세요. "
                             "대상만 넣으면 지시대로 고치고, 레퍼런스도 넣으면 그 분위기를 입히거나 그 장면에 합성합니다. "
-                            "한 번에 약 8분 걸립니다.")
+                            "바꿀 부분과 유지할 부분을 함께 적어 주세요. 색상만 바꾸더라도 질감·조명이 달라질 수 있으니 원본과 비교해 주세요.")
                 with gr.Row():
                     with gr.Column(scale=2, elem_id="sidebar-img"):
                         with gr.Row():
-                            e_target = gr.Image(label="대상(편집할 사진)", type="filepath", height=190)
-                            e_ref = gr.Image(label="레퍼런스(선택)", type="filepath", height=190)
+                            e_target = gr.Image(label="대상(편집할 사진)", type="filepath", height=290)
+                            e_ref = gr.Image(label="레퍼런스(선택)", type="filepath", height=290)
                         e_mode = gr.Radio(choices=["분위기 이식", "장면 합성"], value="분위기 이식",
                                           label="레퍼런스 적용 방식(레퍼런스 있을 때)")
                         e_instr = gr.Textbox(label="편집 지시", lines=2,
-                                             placeholder="예: 배경을 노을로 / 더 선명하게 (레퍼런스 있으면 추가 지시)")
+                                             placeholder="예: 컵만 빨간색으로 바꾸고, 컵의 재질·배경·구도·조명은 유지해 주세요.")
                         with gr.Accordion("고급 설정", open=False, visible=backend.nsfw_available()):
                             e_nsfw = gr.Checkbox(label="제한 해제 모드", value=False)
                         with gr.Row():
@@ -655,7 +655,7 @@ def build_ui():
                       api_name=False)
             # 다시 열거나 새로고침하면 이 계정의 진행 중·마지막 작업을 복원하고, 도는 중이면 타이머를 켠다.
             job_outs = [g_status, g_gallery, e_status, e_out, seen, poll]
-            demo.load(fn=poll_jobs, inputs=[seen], outputs=job_outs, api_name=False)
+            demo.load(fn=poll_jobs, inputs=[seen], outputs=job_outs, show_progress="hidden", api_name=False)
             poll.tick(fn=poll_jobs, inputs=[seen], outputs=job_outs, show_progress="hidden", api_name=False)
 
             # ---- 사용설명서 ----
