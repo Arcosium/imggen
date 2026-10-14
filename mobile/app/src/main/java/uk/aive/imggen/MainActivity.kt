@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity() {
         private const val HOST = "imggen.ai-ve.uk"
         private const val KEY_URL = "current_url"
         private const val BACK_EXIT_WINDOW_MS = 2000L
-        private const val BG = "#F5F1E8"        // app.py CSS 의 --paper
+        private const val BG = "#111315"        // studio_ui.py 의 --studio-bg
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -95,8 +95,8 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.parseColor(BG)
         WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true       // 종이 배경 — 아이콘은 검정
-            isAppearanceLightNavigationBars = true
+            isAppearanceLightStatusBars = false      // 다크 작업실 배경에 밝은 아이콘
+            isAppearanceLightNavigationBars = false
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
     }

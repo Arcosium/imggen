@@ -75,3 +75,6 @@ Thumbs.db
 /.superpowers
 /사용설명서.docx
 /.git
+
+# Local design references, browser snapshots and preview fixtures
+/_workspace/ui-redesign/
