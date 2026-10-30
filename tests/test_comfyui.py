@@ -70,3 +70,27 @@ def test_poll_history_raises_on_failed_job(monkeypatch):
     import pytest
     with pytest.raises(RuntimeError, match="Memory admission"):
         comfyui.poll_history("http://x", "p", timeout=5)
+
+
+def test_poll_history_waits_past_timeout_while_queued(monkeypatch):
+    # 메모리 입장 대기로 timeout 을 넘겨도 큐에 살아 있으면 기다렸다가 결과를 받는다.
+    calls = {"history": 0}
+
+    def _get(url):
+        if url.endswith("/queue"):
+            return {"queue_running": [[0, "p"]], "queue_pending": []}
+        calls["history"] += 1
+        return {"p": {"outputs": {"9": {}}}} if calls["history"] >= 3 else {}
+
+    monkeypatch.setattr(comfyui, "_get_json", _get)
+    assert comfyui.poll_history("http://x", "p", timeout=0, interval=0) == {"9": {}}
+
+
+def test_poll_history_times_out_when_gone_from_queue(monkeypatch):
+    def _get(url):
+        return {"queue_running": [], "queue_pending": []} if url.endswith("/queue") else {}
+
+    monkeypatch.setattr(comfyui, "_get_json", _get)
+    import pytest
+    with pytest.raises(TimeoutError):
+        comfyui.poll_history("http://x", "p", timeout=0, interval=0)

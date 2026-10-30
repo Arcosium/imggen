@@ -94,10 +94,26 @@ def queue_prompt(base_url, graph, client_id="studio"):
     return prompt_id
 
 
-def poll_history(base_url, prompt_id, timeout=300, interval=1.0):
-    deadline = time.time() + timeout
+def _in_queue(base_url, prompt_id):
+    """프롬프트가 ComfyUI 큐(실행 중·대기)에 아직 살아 있는지."""
+    try:
+        q = _get_json(base_url.rstrip("/") + "/queue")
+    except Exception:  # noqa: BLE001
+        return False
+    return any(item[1] == prompt_id
+               for key in ("queue_running", "queue_pending") for item in q.get(key) or [])
+
+
+def poll_history(base_url, prompt_id, timeout=300, interval=1.0, hard_timeout=3 * 3600):
+    # timeout 이 지나도 ComfyUI 큐에 살아 있으면 계속 기다린다 — 스왑이 찬 날엔 메모리 입장 대기만 28분이 걸려
+    # 30분 타임아웃이 실행 직전에 터지고, 남은 장은 버려지고 ComfyUI 는 주인 없는 그림을 마저 그렸다(2026-10-30).
+    # 입장 대기 자체가 시간 초과되면 ComfyUI 가 error 상태로 끝내므로 아래 status 검사가 잡는다. hard_timeout 은 최후 상한.
+    start = time.time()
     url = base_url.rstrip("/") + "/history/" + prompt_id
-    while time.time() < deadline:
+    while True:
+        # 큐를 히스토리보다 먼저 본다 — 두 조회 사이에 끝난 잡을 시간 초과로 오판하지 않게.
+        waited = time.time() - start
+        alive = waited < timeout or (waited < hard_timeout and _in_queue(base_url, prompt_id))
         hist = _get_json(url)
         entry = hist.get(prompt_id)
         if entry and entry.get("outputs"):
@@ -108,6 +124,8 @@ def poll_history(base_url, prompt_id, timeout=300, interval=1.0):
             msgs = [m[1].get("exception_message", "") for m in status.get("messages", [])
                     if m and m[0] == "execution_error"]
             raise RuntimeError("ComfyUI job failed: %s" % ("; ".join(msgs) or prompt_id))
+        if not alive:
+            break
         time.sleep(interval)
     raise TimeoutError("ComfyUI history timeout: %s" % prompt_id)
 
