@@ -39,7 +39,8 @@ def test_image_config_defaults_point_to_packaged_workflows():
 def test_image_config_defaults_are_qwen21_uc():
     """2026-09-23: 생성·편집 모두 Qwen-Image 2.1 UC GGUF, 인코더 Qwen3-VL-8B int8, 2.1 전용 VAE."""
     cfg = backend.image_config()
-    assert cfg["ckpt"] == cfg["edit_ckpt"] == cfg["edit_ref_ckpt"] == "qwen-image-2.1-UC-Q8_0.gguf"
+    assert cfg["ckpt"] == "qwen-image-2.1-UC-Q8_0.gguf"
+    assert cfg["edit_ckpt"] == cfg["edit_ref_ckpt"] == "qwen-image-2.1-UC-Q4_K_M.gguf"   # 2026-10-31 편집만 Q4
     assert cfg["te"] == "qwen3vl_8b_int8_convrot.safetensors"
     assert cfg["vae"] == "qwen_image_2.1_vae_bf16.safetensors"
     assert "t5" not in cfg and "clip_l" not in cfg   # FLUX 2중 인코더 잔재 금지

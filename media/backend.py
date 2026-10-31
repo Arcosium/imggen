@@ -115,7 +115,9 @@ def image_config():
         "txt2img_workflow": os.environ.get("COMFYUI_TXT2IMG_WORKFLOW") or _pkg_workflow("qwen21_txt2img.json"),
         "edit_workflow": os.environ.get("COMFYUI_EDIT_WORKFLOW") or _pkg_workflow("qwen21_edit.json"),
         "ckpt": os.environ.get("COMFYUI_CKPT") or "qwen-image-2.1-UC-Q8_0.gguf",
-        "edit_ckpt": os.environ.get("COMFYUI_EDIT_CKPT") or "qwen-image-2.1-UC-Q8_0.gguf",
+        # 2026-10-31 사장 결정: 편집은 같은 UC 의 Q4_K_M(4.3GB). Strata 가 상주한 날 가용 28~30GiB 라 Q8 편집이
+        # 메모리 입장을 못 넘었다. 생성은 Q8 유지.
+        "edit_ckpt": os.environ.get("COMFYUI_EDIT_CKPT") or "qwen-image-2.1-UC-Q4_K_M.gguf",
         # Qwen-Image 2.1 텍스트 인코더 = Qwen3-VL-8B 단일(CLIPLoader type="qwen_image").
         "te": os.environ.get("COMFYUI_TE") or "qwen3vl_8b_int8_convrot.safetensors",
         "vae": os.environ.get("COMFYUI_VAE") or "qwen_image_2.1_vae_bf16.safetensors",
@@ -123,7 +125,7 @@ def image_config():
         "nsfw_lora_weight": float(os.environ.get("COMFYUI_NSFW_LORA_WEIGHT") or "0.9"),
         # 레퍼런스+대상 2-이미지 편집(image_1=대상·image_2=레퍼런스).
         "edit_ref_workflow": os.environ.get("COMFYUI_EDIT_REF_WORKFLOW") or _pkg_workflow("qwen21_edit_ref.json"),
-        "edit_ref_ckpt": os.environ.get("COMFYUI_EDIT_REF_CKPT") or "qwen-image-2.1-UC-Q8_0.gguf",
+        "edit_ref_ckpt": os.environ.get("COMFYUI_EDIT_REF_CKPT") or "qwen-image-2.1-UC-Q4_K_M.gguf",
     }
 
 
